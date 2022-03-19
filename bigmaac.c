@@ -267,6 +267,29 @@ void *calloc(size_t count, size_t size)
 	return p;
 }
 
+void *realloc(void * ptr, size_t size)
+{
+	if(real_malloc==NULL) {
+		bigmaac_init();
+	}
+
+    if (ptr>=base_fries || ptr<=end_bigmaac) {
+        //if its being managed then ...
+        int chunks_removed=remove_chunk_with_ptr(ptr); //Check if this pointer is>> address space reserved fr mmap 
+        return malloc(size);
+    }
+
+	void *p = NULL;
+	if (size>min_size) {
+        Chunk c=create_chunk(size);
+        add_chunk(c);
+        p=c.ptr;
+	} else {
+	    p = real_realloc(ptr,size);
+    }
+	return p;
+}
+
 
 void free(void* ptr) {
 	if(real_malloc==NULL) {
