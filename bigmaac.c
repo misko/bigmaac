@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <dlfcn.h>
-#include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <errno.h>
