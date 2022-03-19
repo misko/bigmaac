@@ -17,7 +17,7 @@ To use BigMaac,
 `make`
 
 And then , 
-`LD_PRELOAD=./bigmalloc.so your-executable with all the arguments`
+`LD_PRELOAD=./bigmaac.so your-executable with all the arguments`
 
 For example,
-`LD_PRELOAD=./bigmalloc.so python test.py`
+`LD_PRELOAD=./bigmaac.so python test.py`
