@@ -8,10 +8,18 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#define DEFAULT_MIN_SIZE 100 //(1024*1024*10) //10MB
+#define DEFAULT_MIN_SIZE (1024*1024*10) //10MB
 #define DEFAULT_TEMPLATE "/tmp/bigmaax.XXXXXXXX"
 #define DEFAULT_CHUNK_TEMPLATE "bigmaax_chunk.XXXXXXXX"
 #define DEFAULT_CHUNK_LIST_LENGTH 1
+
+typedef struct Chunks {
+   void* ptr;
+   char* tmp_fn;
+   size_t size; 
+} Chunk;
+
+void remove_chunk(Chunk c);
 
 pthread_mutex_t lock;
 
@@ -23,10 +31,6 @@ static void* (*real_realloc)(void*, size_t)=NULL;
 static char *dir_name=NULL;
 static size_t min_size=DEFAULT_MIN_SIZE; //10MB?
 
-typedef struct Chunks {
-   void* ptr;
-   char* tmp_fn;
-} Chunk;
 
 Chunk * chunk_list=NULL;
 size_t chunk_list_length=0;
@@ -70,6 +74,12 @@ __attribute__((constructor)) void init(void) {
 }
 __attribute__((destructor))  void fini(void) {
 	fprintf(stderr,"RM DIR %s\n", dir_name);
+
+    for (int i=0; i<chunk_list_length; i++) {
+        if (chunk_list[i].ptr!=NULL) {
+            remove_chunk(chunk_list[i]);
+        }
+    }
 
 	if(rmdir(dir_name) == -1)
 	{
@@ -127,20 +137,30 @@ Chunk create_chunk(size_t size) {
 		fprintf(stderr,"Bigmaac: Failed to mmmap\n");
 	}
 
-	Chunk c = { ptr, filename};
+	Chunk c = { ptr, filename, size};
 	return c;
 }
 
-void remove_chunk(void * ptr) {
+void remove_chunk(Chunk c) {
+    if (c.ptr!=NULL) {
+        munmap(c.ptr,c.size);
+		int ret = remove(c.tmp_fn);
+	    real_free(c.tmp_fn);
+    }    
+}
+
+int remove_chunk_with_ptr(void * ptr) {
 	pthread_mutex_lock(&lock);
 	for (int i=0; i<chunk_list_length; i++) {
 		if (chunk_list[i].ptr==ptr){
-			chunk_list[i].ptr=NULL;
-			int ret = remove(chunk_list[i].tmp_fn);
-			free(chunk_list[i].tmp_fn);
+            remove_chunk(chunk_list[i]);
+            chunk_list[i].ptr=NULL;
+	        pthread_mutex_unlock(&lock);
+            return 1;
 		}
 	}
 	pthread_mutex_unlock(&lock);
+    return 0;
 }
 
 
@@ -162,14 +182,29 @@ void *malloc(size_t size)
 	}
 
 	void *p = NULL;
-	p = real_malloc(size);
-	fprintf(stderr,"%p %ld\n", p,size);
 	if (size>min_size) {
-		fprintf(stderr, "%p %ld\n", p,size);
-	}
+        Chunk c=create_chunk(size);
+        add_chunk(c);
+        p=c.ptr;
+		fprintf(stderr, "BIGMAC %p %ld\n", p,size);
+	} else {
+	    p = real_malloc(size);
+		//fprintf(stderr, "FRIES %p %ld\n", p,size);
+    }
 	return p;
 }
 
 
+void free(void* ptr) {
+	if(real_malloc==NULL) {
+		bigmaac_init();
+	}
 
+    int chunks_removed=remove_chunk_with_ptr(ptr); //Check if this pointer is>> address space reserved fr mmap 
+    if (chunks_removed>0) {
+        return;
+    }
+    real_free(ptr);
+
+}
 
