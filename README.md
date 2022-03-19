@@ -18,3 +18,6 @@ To use BigMaac,
 
 And then , 
 `LD_PRELOAD=./bigmalloc.so your-executable with all the arguments`
+
+For example,
+`LD_PRELOAD=./bigmalloc.so python test.py`
