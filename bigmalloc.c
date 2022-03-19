@@ -167,6 +167,7 @@ void add_chunk(Chunk c) {
 
 
 Chunk create_chunk(size_t size) {
+    fprintf(stderr,"Creating a new Bigmaac... %ld\n",size);
 	//figure out a filename
 	const char * filename_template=DEFAULT_CHUNK_TEMPLATE;
 	char * filename=(char*)malloc(sizeof(char)*(strlen(dir_name)+1+strlen(filename_template)+1));
