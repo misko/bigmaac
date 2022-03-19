@@ -241,11 +241,28 @@ void *malloc(size_t size)
 	if (size>min_size) {
         Chunk c=create_chunk(size);
         add_chunk(c);
-        //p=c.ptr;
+        p=c.ptr;
 	    p = real_malloc(size);
 	} else {
 	    p = real_malloc(size);
 		//fprintf(stderr, "FRIES %p %ld\n", p,size);
+    }
+	return p;
+}
+
+void *calloc(size_t count, size_t size)
+{
+	if(real_malloc==NULL) {
+		bigmaac_init();
+	}
+
+	void *p = NULL;
+	if (size>min_size) {
+        Chunk c=create_chunk(size);
+        add_chunk(c);
+        p=c.ptr;
+	} else {
+	    p = real_calloc(count,size);
     }
 	return p;
 }
