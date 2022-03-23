@@ -1,6 +1,5 @@
 #define _GNU_SOURCE
 #include <pthread.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -76,12 +75,6 @@ void close_bigmaac() {
 	pthread_mutex_unlock(&lock);
 }
 
-void signal_handler(int signum) {
-    if (signum==SIGTERM || signum==SIGINT || signum==SIGQUIT || signum==SIGHUP) {
-        close_bigmaac();
-        exit(0);
-    }
-}
 
 static void bigmaac_init(void)
 {
@@ -158,15 +151,6 @@ static void bigmaac_init(void)
 		perror("mkdtemp failed: ");
 	}
 
-    //install signal handlers
-    struct sigaction action;
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = signal_handler;
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGQUIT, &action, NULL);
-    sigaction(SIGHUP, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
-
     load_state=3;
 }
 
@@ -222,6 +206,7 @@ Chunk create_chunk(size_t size) {
 	if (fd<0) {
 		fprintf(stderr,"Bigmaac: Failed to create file for mmap\n");
 	}
+    unlink(filename);
 	
 	//resize the file
 	ftruncate(fd, size);
