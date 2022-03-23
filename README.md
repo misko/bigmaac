@@ -2,6 +2,8 @@
 
 ## because sometimes a happy meal is not big enough
 
+BigMaac can be used in userspace to enable selective user swap for large memory allocations (typically your data objects)
+
 BigMaac intercepts calls to memory management that would normally get mapped directly to the heap/RAM and instead memory allocated from an alternative source (SSD/Disk).
 
 The specific calls BigMaac intercepts are, 
@@ -14,10 +16,14 @@ For example, lets say you are on a system that has no swap available and only 2G
 When numpy/python/anything makes the request for 5GB of memory, that call is intercepted and diverted by BigMaac. It is diverted through mmap to Disk backed RAM. Which means that the OS will keep whatever part of the 5GB matrix in can in RAM, and page the rest from disk. If you happen to run the same code on a system with 10GB RAM, it ~should leave the entire contents in RAM, with hopefully not much slowdown.
 
 To use BigMaac, 
+
 `make`
 
-And then , 
+And then ,
+ 
 `LD_PRELOAD=./bigmaac.so your-executable with all the arguments`
 
 For example,
+
 `LD_PRELOAD=./bigmaac.so python test.py`
+
