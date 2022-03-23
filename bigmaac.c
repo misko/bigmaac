@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,7 +12,7 @@
 #include <string.h>
 
 
-#define DEFAULT_MIN_SIZE (1024*1024*10) //10MB
+#define DEFAULT_MIN_SIZE (1024*1024*50) //50MB
 #define DEFAULT_TEMPLATE "/tmp/bigmaax.XXXXXXXX"
 #define DEFAULT_CHUNK_TEMPLATE "bigmaax_chunk.XXXXXXXX"
 #define DEFAULT_CHUNK_LIST_LENGTH 1
@@ -54,6 +55,33 @@ size_t page_size = 0;
 
 
 static int load_state=0;
+
+
+void close_bigmaac() {
+	pthread_mutex_lock(&lock);
+    if (load_state>=0) {
+        for (int i=0; i<chunk_list_length; i++) {
+            if (chunk_list[i].ptr!=NULL) {
+                remove_chunk(chunk_list[i]);
+            }
+        }
+
+        if(rmdir(dir_name) == -1)
+        {
+            perror("rmdir failed: ");
+            fflush(stdout);
+        }
+    }
+    load_state=-1;
+	pthread_mutex_unlock(&lock);
+}
+
+void signal_handler(int signum) {
+    if (signum==SIGTERM || signum==SIGINT || signum==SIGQUIT || signum==SIGHUP) {
+        close_bigmaac();
+        exit(0);
+    }
+}
 
 static void bigmaac_init(void)
 {
@@ -129,25 +157,25 @@ static void bigmaac_init(void)
 	{
 		perror("mkdtemp failed: ");
 	}
+
+    //install signal handlers
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = signal_handler;
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGQUIT, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
+    sigaction(SIGINT, &action, NULL);
+
     load_state=3;
 }
+
 
 __attribute__((constructor)) void init(void) {
     //bigmaac_init();
 }
 __attribute__((destructor))  void fini(void) {
-
-    for (int i=0; i<chunk_list_length; i++) {
-        if (chunk_list[i].ptr!=NULL) {
-            remove_chunk(chunk_list[i]);
-        }
-    }
-
-	if(rmdir(dir_name) == -1)
-	{
-		perror("rmdir failed: ");
-		fflush(stdout);
-	}
+    close_bigmaac();
 
 }
 
@@ -255,7 +283,7 @@ void *malloc(size_t size)
         Chunk c=create_chunk(size);
         add_chunk(c);
         p=c.ptr;
-	    p = real_malloc(size);
+	    //p = real_malloc(size);
 	} else {
 	    p = real_malloc(size);
 		//fprintf(stderr, "FRIES %p %ld\n", p,size);
@@ -283,13 +311,13 @@ void *calloc(size_t count, size_t size)
 	return p;
 }
 
-void *XXrealloc(void * ptr, size_t size)
+void *realloc(void * ptr, size_t size)
 {
 	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
 
-    if (load_state==3 && (ptr>=base_fries || ptr<=end_bigmaac)) {
+    if (load_state==3 && (ptr>=base_fries && ptr<=end_bigmaac)) {
         //if its being managed then ...
         int chunks_removed=remove_chunk_with_ptr(ptr); //Check if this pointer is>> address space reserved fr mmap 
         return malloc(size);
@@ -308,6 +336,9 @@ void *XXrealloc(void * ptr, size_t size)
 
 
 void free(void* ptr) {
+    if (load_state<0) {
+        return;
+    }
 	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
