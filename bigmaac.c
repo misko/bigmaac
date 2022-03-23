@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <pthread.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -51,16 +52,26 @@ size_t used_fries=0;
 size_t used_bigmaac=0;
 size_t page_size = 0;	
 
+
+static int load_state=0;
+
 static void bigmaac_init(void)
 {
-	fprintf(stderr,"Loaded Bigmaac!\n");
+    if (load_state!=0) {
+        fprintf(stderr,"Already init %d\n",load_state);
+        return;
+    }
+	fprintf(stderr,"Loading Bigmaac!\n");
+    load_state=1;
 	real_malloc = dlsym(RTLD_NEXT, "malloc");
 	real_free = dlsym(RTLD_NEXT, "free");
 	real_calloc = dlsym(RTLD_NEXT, "calloc");
 	real_realloc = dlsym(RTLD_NEXT, "realloc");
 	if (!real_malloc || !real_free || !real_calloc || !real_realloc) {
+        fprintf(stderr,"Error %d\n",load_state);
 		fprintf(stderr, "Error in `dlsym`: %s\n", dlerror());
 	}
+    load_state=2;
 
     page_size = sysconf(_SC_PAGE_SIZE);	
 	//load enviornment variables
@@ -118,11 +129,11 @@ static void bigmaac_init(void)
 	{
 		perror("mkdtemp failed: ");
 	}
-
+    load_state=3;
 }
 
 __attribute__((constructor)) void init(void) {
-    bigmaac_init();
+    //bigmaac_init();
 }
 __attribute__((destructor))  void fini(void) {
 
@@ -232,12 +243,15 @@ int remove_chunk_with_ptr(void * ptr) {
 
 void *malloc(size_t size)
 {
-	if(real_malloc==NULL) {
+	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
+    if (load_state<2) {
+        return NULL;
+    }
 
 	void *p = NULL;
-	if (size>min_size) {
+	if (load_state==3 && size>min_size) {
         Chunk c=create_chunk(size);
         add_chunk(c);
         p=c.ptr;
@@ -251,12 +265,15 @@ void *malloc(size_t size)
 
 void *calloc(size_t count, size_t size)
 {
-	if(real_malloc==NULL) {
+	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
+    if (load_state<2) {
+        return NULL;
+    }
 
 	void *p = NULL;
-	if (size>min_size) {
+	if (load_state==3 && size>min_size) {
         Chunk c=create_chunk(size);
         add_chunk(c);
         p=c.ptr;
@@ -266,20 +283,20 @@ void *calloc(size_t count, size_t size)
 	return p;
 }
 
-void *realloc(void * ptr, size_t size)
+void *XXrealloc(void * ptr, size_t size)
 {
-	if(real_malloc==NULL) {
+	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
 
-    if (ptr>=base_fries || ptr<=end_bigmaac) {
+    if (load_state==3 && (ptr>=base_fries || ptr<=end_bigmaac)) {
         //if its being managed then ...
         int chunks_removed=remove_chunk_with_ptr(ptr); //Check if this pointer is>> address space reserved fr mmap 
         return malloc(size);
     }
 
 	void *p = NULL;
-	if (size>min_size) {
+	if (load_state==3 && size>min_size) {
         Chunk c=create_chunk(size);
         add_chunk(c);
         p=c.ptr;
@@ -291,11 +308,11 @@ void *realloc(void * ptr, size_t size)
 
 
 void free(void* ptr) {
-	if(real_malloc==NULL) {
+	if(load_state==0 && real_malloc==NULL) {
 		bigmaac_init();
 	}
 
-    if (ptr<base_fries || ptr>end_bigmaac) {
+    if (load_state!=3 || ptr<base_fries || ptr>end_bigmaac) {
         real_free((size_t)ptr);
     }
 
