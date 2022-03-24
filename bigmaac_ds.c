@@ -129,7 +129,7 @@ void heap_free_node(node * head, node * n) {
         fprintf(stderr,"Merge free next\n");
         //add it to the next node
         n->next->size+=n->size;
-        //unlink this node
+        //unlink this node from ll
         n->next->previous=n->previous;
         n->previous->next=n->next;
         //update the pointer to this..
@@ -140,7 +140,7 @@ void heap_free_node(node * head, node * n) {
         fprintf(stderr,"Merge free prev\n");
         //add it to the previous node
         n->previous->size+=n->size;
-        //unlnk this node
+        //unlnk this node from ll
         n->next->previous=n->previous;
         n->previous->next=n->next;
         //TODO free this node?

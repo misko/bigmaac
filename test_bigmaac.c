@@ -23,6 +23,7 @@ int main() {
     int n_ints=DEFAULT_MIN_SIZE/sizeof(int);
     n_ints++; //make sure its big enough to trigger
     //lets test some mallocs
+    fprintf(stderr,"Malloc\n");
     for (int i=0; i<N; i++) {
         int more=seed%100;
         sizes[i]=more+n_ints;
@@ -38,6 +39,7 @@ int main() {
         checksums[i]=checksum(chunks[i],sizes[i]);
         fprintf(stdout,"%d %d\n",i,checksums[i]);
     }
+    fprintf(stderr,"Malloc/Free\n");
     for (int i=0; i<N; i++) {
         seed+=((seed%9)*(seed%7)+1)%(seed-1-seed%2);
         if (seed%(i+1)>i/2) {
@@ -59,12 +61,14 @@ int main() {
             }
         }
     }
+    fprintf(stderr,"Malloc/Free post\n");
     for (int i=0; i<N; i++) {
         if (chunks[i]!=NULL) {
             checksums[i]=checksum(chunks[i],sizes[i]);
             fprintf(stdout,"%d %d\n",i,checksums[i]);
         }
     }
+    fprintf(stderr,"Realloc\n");
     for (int i=0; i<N; i++) {
         if (chunks[i]==NULL) {
             continue;
