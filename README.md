@@ -2,7 +2,7 @@
 
 ## because sometimes a happy meal is not big enough
 
-BigMaac can be used in userspace (e.g. inside Kubernetes containers) to enable selective user swap for large memory allocations (typically your data objects)
+BigMaac can be used in userspace (e.g. inside Kubernetes containers) to enable selective user space swap for large memory allocations (typically your data objects)
 
 BigMaac intercepts calls to memory management that would normally get mapped directly to the heap/RAM and instead memory allocated from an alternative source (SSD/Disk).
 
@@ -26,4 +26,7 @@ And then ,
 For example,
 
 `LD_PRELOAD=./bigmaac.so python test.py`
+
+To run test cases (generate checksums with and without library usage), 
+`make test`
 
