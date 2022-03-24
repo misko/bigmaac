@@ -158,6 +158,8 @@ void heapify_down(heap * heap, int idx) {
 
 
 void heap_insert(node * head, node * n) {
+    //fprintf(stderr,"HEAP INSERT\n");
+    //print_heap(head->heap);
     if (head->heap->used==head->heap->length) {
         head->heap->node_array=(node**)real_realloc(head->heap->node_array,sizeof(node*)*head->heap->length*2);
         if (head->heap->node_array==NULL) {
@@ -174,33 +176,8 @@ void heap_insert(node * head, node * n) {
     heapify_up(head->heap, n->heap_idx);
 }
 
-void heap_free_node(node * head, node * n) {
-    if (n->next!=NULL && n->next->in_use==FREE) {
-        //add it to the next node
-        n->next->size+=n->size;
-        //unlink this node from ll
-        n->next->previous=n->previous;
-        n->previous->next=n->next;
-        //update the pointer to this..
-        n->next->ptr=n->ptr;
-        //TODO free this node?
-        free(n);
-    } else if (n->previous!=NULL && n->previous->in_use==FREE) {
-        //add it to the previous node
-        n->previous->size+=n->size;
-        //unlnk this node from ll
-        n->next->previous=n->previous;
-        n->previous->next=n->next;
-        //TODO free this node?
-        free(n);
-    } else { //add a whole new node
-        n->in_use=FREE;
-        heap_insert(head,n); 
-    }
-}
-
 void print_heap(heap* heap) {
-    fprintf(stderr,"PRINT HEAP!\n");
+    //fprintf(stderr,"PRINT HEAP!\n");
     for (int i =0; i<heap->used; i++) {
         fprintf(stderr,"parent %d node %d , ptr=%p size=%ld\n",
             (i-1)/2, i,
@@ -209,17 +186,88 @@ void print_heap(heap* heap) {
     }
 }
 
-node * heap_pop_split(node* head, size_t size) {
+void heap_free_node(node * head, node * n) {
+    //fprintf(stderr,"HEAP FREE\n");
     //print_heap(head->heap);
-    node * largest_gap = head->heap->node_array[0];
-    if (largest_gap->size<size) {
-        fprintf(stderr,"BigMalloc heap failed to find a gap of size %ld , biggest gap is %ld, difference is %ld\n",size,largest_gap->size, size-largest_gap->size);
+    if (n->next!=NULL && n->next->in_use==FREE &&
+            n->previous!=NULL && n->previous->in_use==FREE) {
+        //fprintf(stderr,"BigMaac: Double rainbow! %p %p\n",n->next->ptr,n->previous->ptr);
+        //print_heap(head->heap);
+        n->next->size+=n->size;
+        n->next->size+=n->previous->size;
+
+        n->next->previous=n->previous->previous;
+
+        n->previous->previous->next=n->next;
+
+        n->next->ptr=n->previous->ptr;
+
+        heap_remove_idx(head->heap, n->previous->heap_idx);
+
+        heapify_up(head->heap, n->next->heap_idx);
+        free(n->previous);
+        free(n);
+        //print_heap(head->heap);
+    } else if (n->next!=NULL && n->next->in_use==FREE) {
+        //add it to the next node
+        n->next->size+=n->size;
+        //unlink this node from ll
+        n->next->previous=n->previous;
+        n->previous->next=n->next;
+        //update the pointer to this..
+        n->next->ptr=n->ptr;
+        //TODO free this node?
+        heapify_up(head->heap, n->next->heap_idx);
+        free(n);
+    } else if (n->previous!=NULL && n->previous->in_use==FREE) {
+        //add it to the previous node
+        n->previous->size+=n->size;
+        //unlnk this node from ll
+        n->next->previous=n->previous;
+        n->previous->next=n->next;
+        //TODO free this node?
+        heapify_up(head->heap, n->previous->heap_idx);
+        free(n);
+    } else { //add a whole new node
+        n->in_use=FREE;
+        heap_insert(head,n); 
+    }
+}
+
+
+node * heap_pop_split(node* head, size_t size) {
+    //fprintf(stderr,"HEAP POP SPLIT\n");
+    //print_heap(head->heap);
+    if (head->heap->used==0) {
+        fprintf(stderr,"There is no free memory!\n");
+        //TODO resort to malloc?
     }
 
-    if (largest_gap->size==size) {
-        heap_remove_idx(head->heap, largest_gap->heap_idx);
-        largest_gap->in_use=IN_USE;
-        return largest_gap;
+    node * free_node = head->heap->node_array[0];
+    if (free_node->size<size) {
+        fprintf(stderr,"BigMalloc heap failed to find a gap of size %ld , biggest gap is %ld, difference is %ld\n",size,free_node->size, size-free_node->size);
+        //Try reserved space?
+    }
+
+    //check left and right child ( avoid further fragmenting largest chunk )
+    //How can you have any pudding if you dont eat yer meat?
+    int left_child_idx=1;
+    if (head->heap->used>left_child_idx 
+            && head->heap->node_array[left_child_idx]->size>=size) {
+        free_node=head->heap->node_array[left_child_idx];
+    }
+    int right_child_idx=2;
+    if (head->heap->used>right_child_idx 
+            && head->heap->node_array[right_child_idx]->size>=size 
+            && head->heap->node_array[right_child_idx]->size<free_node->size) {
+        free_node=head->heap->node_array[right_child_idx];
+    }
+
+    if (free_node->size==size) {
+        fprintf(stderr,"BigMalloc : what are the odds?\n");
+        heap_remove_idx(head->heap, free_node->heap_idx);
+        free_node->in_use=IN_USE;
+        return free_node;
     }
 
     //need to split this node
@@ -230,20 +278,20 @@ node * heap_pop_split(node* head, size_t size) {
     //heapify from this node down
     *used_node = (node){
         .size = size,
-        .ptr = largest_gap->ptr,
-        .next = largest_gap,
-        .previous = largest_gap->previous,
+        .ptr = free_node->ptr,
+        .next = free_node,
+        .previous = free_node->previous,
         .in_use = IN_USE,
         .heap_idx = -1
     };
 
-    largest_gap->size-=size; // need to now heapify this node
-    largest_gap->ptr=largest_gap->ptr+size;
+    free_node->size-=size; // need to now heapify this node
+    free_node->ptr=free_node->ptr+size;
 
-    largest_gap->previous->next=used_node;
-    largest_gap->previous=used_node;
+    free_node->previous->next=used_node;
+    free_node->previous=used_node;
 
-    heapify_down(head->heap,largest_gap->heap_idx);
+    heapify_down(head->heap,free_node->heap_idx);
 
     return used_node;
 
@@ -615,7 +663,7 @@ void *realloc(void * ptr, size_t size)
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
-
+    assert(size>0);
     if (load_state==3 && (ptr>=base_fries && ptr<end_bigmaac)) {
         Chunk c;
         if (size>min_size) { //keep it managed here
