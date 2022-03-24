@@ -78,7 +78,7 @@ static int load_state=0;
 void heapify_down(heap * heap, int idx);
 
 heap * heap_new(size_t length) {
-    heap * ha = (heap*)malloc(sizeof(heap));
+    heap * ha = (heap*)real_malloc(sizeof(heap));
     if (ha==NULL) {
         fprintf(stderr,"BigMalloc heap failed\n");
     }     
@@ -520,6 +520,7 @@ Chunk create_chunk(size_t size) {
     }
 
     unlink(filename);
+    free(filename);
 
     //resize the file
     ftruncate(fd, size);
@@ -551,6 +552,11 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
         size_t m = (n->size<c->size) ? n->size : c->size;
         memcpy(c->ptr,n->ptr,m);
     } 
+
+    void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
+    if (remap==NULL) {
+        printf("Oh dear, something went wrong with munmap()! %s\n", strerror(errno));
+    }
 
     heap_free_node(_head,n);
 
