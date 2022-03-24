@@ -27,3 +27,6 @@ For example,
 
 `LD_PRELOAD=./bigmaac.so python test.py`
 
+To run test cases (generate checksums with and without library usage), 
+`make test`
+
