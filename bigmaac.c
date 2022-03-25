@@ -739,8 +739,8 @@ void *realloc(void * ptr, size_t size)
 
     //currently managed by system
     void *p = NULL;
-    //if (size>min_size && size) {
-    if (size>24476 && size<25476) { //debug pytest
+    if (size>min_size && size) {
+        //if (size>24476 && size<25476) { //debug pytest
         void* mallocd_p = real_realloc(ptr,size); //we have no idea of previous size
         if (mallocd_p==NULL) {
             fprintf(stderr,"BigMalloc: Failed to malloc\n");
