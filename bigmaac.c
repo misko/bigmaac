@@ -748,7 +748,7 @@ void *realloc(void * ptr, size_t size)
         }
         Chunk c=create_chunk(size);
         p=c.ptr;
-        assert(1==0);
+        //assert(1==0);
         memcpy(p,mallocd_p,size);
 
         real_free((size_t)mallocd_p);
