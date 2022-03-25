@@ -158,8 +158,6 @@ void heapify_down(heap * heap, int idx) {
 
 
 void heap_insert(node * head, node * n) {
-    //fprintf(stderr,"HEAP INSERT\n");
-    //print_heap(head->heap);
     if (head->heap->used==head->heap->length) {
         head->heap->node_array=(node**)real_realloc(head->heap->node_array,sizeof(node*)*head->heap->length*2);
         if (head->heap->node_array==NULL) {
@@ -187,12 +185,12 @@ void print_heap(heap* heap) {
 }
 
 void heap_free_node(node * head, node * n) {
-    //fprintf(stderr,"HEAP FREE\n");
-    //print_heap(head->heap);
     if (n->next!=NULL && n->next->in_use==FREE &&
             n->previous!=NULL && n->previous->in_use==FREE) {
-        //fprintf(stderr,"BigMaac: Double rainbow! %p %p\n",n->next->ptr,n->previous->ptr);
-        //print_heap(head->heap);
+#ifdef DEBUG
+        fprintf(stderr,"BigMaac: Double rainbow! %p %p\n",n->next->ptr,n->previous->ptr);
+        print_heap(head->heap);
+#endif
         n->next->size+=n->size;
         n->next->size+=n->previous->size;
 
@@ -205,8 +203,8 @@ void heap_free_node(node * head, node * n) {
         heap_remove_idx(head->heap, n->previous->heap_idx);
 
         heapify_up(head->heap, n->next->heap_idx);
-        free(n->previous);
-        free(n);
+        real_free((size_t)(n->previous));
+        real_free((size_t)n);
         //print_heap(head->heap);
     } else if (n->next!=NULL && n->next->in_use==FREE) {
         //add it to the next node
@@ -218,7 +216,7 @@ void heap_free_node(node * head, node * n) {
         n->next->ptr=n->ptr;
         //TODO free this node?
         heapify_up(head->heap, n->next->heap_idx);
-        free(n);
+        real_free((size_t)n);
     } else if (n->previous!=NULL && n->previous->in_use==FREE) {
         //add it to the previous node
         n->previous->size+=n->size;
@@ -227,7 +225,7 @@ void heap_free_node(node * head, node * n) {
         n->previous->next=n->next;
         //TODO free this node?
         heapify_up(head->heap, n->previous->heap_idx);
-        free(n);
+        real_free((size_t)n);
     } else { //add a whole new node
         n->in_use=FREE;
         heap_insert(head,n); 
@@ -236,8 +234,6 @@ void heap_free_node(node * head, node * n) {
 
 
 node * heap_pop_split(node* head, size_t size) {
-    //fprintf(stderr,"HEAP POP SPLIT\n");
-    //print_heap(head->heap);
     if (head->heap->used==0) {
         fprintf(stderr,"There is no free memory!\n");
         //TODO resort to malloc?
@@ -309,7 +305,7 @@ node * heap_find_node(node* head , void * ptr) {
 
 void print_ll(node * head) {
     while (head!=NULL) {
-      fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, length=%\n",head,head->next,head->in_use,head->previous,head->size);
+      fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, length=\n",head,head->next,head->in_use,head->previous,head->size);
       head=head->next;
     }
 }
@@ -593,6 +589,8 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
     node * n = heap_find_node(_head , ptr);
     if (n==NULL) {
         fprintf(stderr,"Cannot find node in BigMaac\n");
+        pthread_mutex_unlock(&lock);
+        return 0;
     }   
 
     //if c is not null
@@ -602,6 +600,7 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
     } 
 
     void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
+    //void * remap = mmap(n->ptr, n->size, PROT_READ, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
     if (remap==NULL) {
         printf("Oh dear, something went wrong with munmap()! %s\n", strerror(errno));
     }
@@ -625,13 +624,17 @@ void *malloc(size_t size)
         return NULL;
     }
 
+    if (size==0) {
+        return NULL;
+    }
+
     void *p = NULL;
     if (load_state==3 && size>min_size) {
         Chunk c=create_chunk(size);
         p=c.ptr;
     } else {
         p = real_malloc(size);
-        if (p>base_fries && p<end_bigmaac) {
+        if (p>=base_fries && p<end_bigmaac) {
             fprintf(stderr,"Malloc tried to hand out a BigMaac address p=%p s_offset=%ld e_offset=%ld\n",p,p-base_fries,end_bigmaac-p);
             assert(1==0);
         }
@@ -641,6 +644,7 @@ void *malloc(size_t size)
 
 void *calloc(size_t count, size_t size)
 {
+
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
@@ -648,12 +652,17 @@ void *calloc(size_t count, size_t size)
         return NULL;
     }
 
+    if (count==0 || size==0) {
+        return NULL;
+    }
+    size=count*size;
+
     void *p = NULL;
     if (load_state==3 && size>min_size) {
         Chunk c=create_chunk(size);
         p=c.ptr;
     } else {
-        p = real_calloc(count,size);
+        p = real_calloc(1,size);
     }
     return p;
 }
@@ -663,26 +672,41 @@ void *realloc(void * ptr, size_t size)
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
-    assert(size>0);
+    if (ptr==NULL) {
+        return malloc(size);
+    }
+    if (size==0) {
+        free(ptr);
+        return NULL;
+    }
     if (load_state==3 && (ptr>=base_fries && ptr<end_bigmaac)) {
         Chunk c;
+        //c=create_chunk(size);
         if (size>min_size) { //keep it managed here
             c=create_chunk(size);
         } else {
-            c=(Chunk){ malloc(size), size };
+            c=(Chunk){ .ptr=real_malloc(size), .size=size };
         }
-        remove_chunk_with_ptr(ptr,&c); //Check if this pointer is>> address space reserved fr mmap
+        int r=remove_chunk_with_ptr(ptr,&c); //Check if this pointer is>> address space reserved fr mmap
+        if (r==0){ 
+            fprintf(stderr,"BigMaac: failed to find part of memory\n");
+            assert(1==0);
+        }
         return c.ptr;            
     }
 
     void *p = NULL;
     if (load_state==3 && size>min_size) {
         void* mallocd_p = real_realloc(ptr,size); //we have no idea of previous size
-
+        if (mallocd_p==NULL) {
+            fprintf(stderr,"BigMalloc: Failed to malloc\n");
+            assert(1==0);
+        }
         Chunk c=create_chunk(size);
         p=c.ptr;
 
         memcpy(p,mallocd_p,size);
+        real_free((size_t)mallocd_p);
     } else {
         p = real_realloc(ptr,size);
     }
@@ -698,7 +722,7 @@ void free(void* ptr) {
         bigmaac_init();
     }
 
-    if (load_state!=3 || ptr<base_fries || ptr>end_bigmaac) {
+    if (load_state!=3 || ptr<base_fries || ptr>=end_bigmaac) {
         real_free((size_t)ptr);
         return;
     }
