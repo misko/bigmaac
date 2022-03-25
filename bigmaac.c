@@ -177,7 +177,6 @@ void heap_insert(node * head, node * n) {
 }
 
 void print_heap(heap* heap) {
-    //fprintf(stderr,"PRINT HEAP!\n");
     for (int i =0; i<heap->used; i++) {
         fprintf(stderr,"parent %d node %d , ptr=%p size=%ld\n",
             (i-1)/2, i,
@@ -207,7 +206,6 @@ void heap_free_node(node * head, node * n) {
         heapify_up(head->heap, n->next->heap_idx);
         real_free((size_t)(n->previous));
         real_free((size_t)n);
-        //print_heap(head->heap);
     } else if (n->next!=NULL && n->next->in_use==FREE) {
         //add it to the next node
         n->next->size+=n->size;
@@ -262,7 +260,6 @@ node * heap_pop_split(node* head, size_t size) {
     }
 
     if (free_node->size==size) {
-        fprintf(stderr,"BigMalloc : what are the odds?\n");
         heap_remove_idx(head->heap, free_node->heap_idx);
         free_node->in_use=IN_USE;
         return free_node;
@@ -404,6 +401,7 @@ static void bigmaac_init(void)
     load_state=2;
 
     page_size = sysconf(_SC_PAGE_SIZE);	
+
     //load enviornment variables
     const char * template=getenv("BIGMAAC_TEMPLATE");
     if (template==NULL) {
@@ -448,14 +446,13 @@ static void bigmaac_init(void)
     _head = ll_new(base_bigmaac,size_bigmaac);   
 #endif 
 
-
     load_state=3;
     pthread_mutex_unlock(&lock);
 }
 
 
 __attribute__((constructor)) void init(void) {
-    //bigmaac_init();
+    //bigmaac_init(); //cant depend on this init
 }
 __attribute__((destructor))  void fini(void) {
     close_bigmaac();
@@ -490,7 +487,7 @@ void add_chunk(Chunk c) {
 
 
 Chunk create_chunk(size_t size) {
-    //fprintf(stderr,"Creating a new Bigmaac... %ld\n",size);
+    //align size to page
     size=size_to_page_multiple(size);
     //figure out a filename
     char * filename=(char*)real_malloc(sizeof(char)*(strlen(DEFAULT_TEMPLATE)+1));
@@ -620,7 +617,6 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
     } 
 
     void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
-    //void * remap = mmap(n->ptr, n->size, PROT_READ, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
     if (remap==NULL) {
         fprintf(stderr,"Oh dear, something went wrong with munmap()! %s\n", strerror(errno));
         return 0;
@@ -748,7 +744,7 @@ void *realloc(void * ptr, size_t size)
         }
         Chunk c=create_chunk(size);
         p=c.ptr;
-        //assert(1==0);
+
         memcpy(p,mallocd_p,size);
 
         real_free((size_t)mallocd_p);
