@@ -40,7 +40,7 @@ node * _head; // head of the heap
 
 void remove_chunk(Chunk c);
 
-pthread_mutex_t lock;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void* (*real_malloc)(size_t)=NULL;
 static void* (*real_calloc)(size_t,size_t)=NULL;
@@ -81,10 +81,12 @@ heap * heap_new(size_t length) {
     heap * ha = (heap*)real_malloc(sizeof(heap));
     if (ha==NULL) {
         fprintf(stderr,"BigMalloc heap failed\n");
+        assert(ha!=NULL);
     }     
     ha->node_array=(node**)real_malloc(sizeof(node*)*length);
     if (ha->node_array==NULL) {
         fprintf(stderr,"BigMalloc heap failed 2\n");
+        assert(ha->node_array!=NULL);
     }
     ha->length=length;
     ha->used=0;
@@ -314,6 +316,7 @@ node * ll_new(void* ptr, size_t size) {
     node * head = (node*)real_malloc(sizeof(node)*2);
     if (head==NULL) {
         fprintf(stderr,"BigMalloc heap: failed to make list\n");
+        assert(head!=NULL);
     }
 
     node * e = head+1;
@@ -349,10 +352,15 @@ node * ll_new(void* ptr, size_t size) {
 
 
 size_t size_to_page_multiple(size_t size) {
+    size_t old_size=size;
+
     size_t residual=size % page_size;
     if ( residual != 0) {
         size=size+(page_size-residual);
     }
+
+    assert(old_size<=size);
+
     return size;
 }
 
@@ -373,7 +381,10 @@ void close_bigmaac() {
 
 static void bigmaac_init(void)
 {
+    pthread_mutex_lock(&lock);
+
     if (load_state!=0) {
+        pthread_mutex_unlock(&lock);
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
@@ -417,28 +428,29 @@ static void bigmaac_init(void)
     base_fries = mmap(NULL, size_total, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
     if (base_fries==MAP_FAILED) {
         printf("Oh dear, something went wrong with mmap()! %s\n", strerror(errno));
+        assert(base_fries!=MAP_FAILED);
     }    
     end_fries=((char*)base_fries)+size_fries;
 
     base_bigmaac=end_fries;
     end_bigmaac=((char*)base_fries)+size_total;
 
-    //initialize a heap
-    _head = ll_new(base_bigmaac,size_bigmaac);    
-
+#ifdef NOHEAP
     //initalize the chunk list
     chunk_list_length=DEFAULT_CHUNK_LIST_LENGTH;
     chunk_list=(Chunk*)real_malloc(sizeof(Chunk)*chunk_list_length);
     if (chunk_list==NULL) {
         fprintf(stderr,"BigMaac: Failed to allocate memory for chunk list\n");
+        assert(chunk_list!=NULL);
     }
+#else
+    //initialize a heap
+    _head = ll_new(base_bigmaac,size_bigmaac);   
+#endif 
 
-    //initialize mutex for chunk list
-    if (pthread_mutex_init(&lock, NULL) != 0) {
-        printf("\n mutex init has failed\n");
-    }
 
     load_state=3;
+    pthread_mutex_unlock(&lock);
 }
 
 
@@ -550,38 +562,46 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
 
 #else
 Chunk create_chunk(size_t size) {
-    //fprintf(stderr,"Creating a new Bigmaac... %ld\n",size);
+    //page align the size requested
     size=size_to_page_multiple(size);
-    //figure out a filename
+
     char * filename=(char*)real_malloc(sizeof(char)*(strlen(DEFAULT_TEMPLATE)+1));
     if (filename==NULL) {
         fprintf(stderr,"Bigmaac: failed to allocate memory in remove_chunk\n");
+        assert(filename!=NULL);
     }
     strcpy(filename,DEFAULT_TEMPLATE);
+
     int fd=mkstemp(filename);
     if (fd<0) {
         fprintf(stderr,"Bigmaac: Failed to make temp file\n");
+        assert(fd>=0);
     }
 
     unlink(filename);
-    free(filename);
+    real_free((size_t)filename);
 
     //resize the file
     ftruncate(fd, size);
 
-    //guess address
     pthread_mutex_lock(&lock);
     node * heap_chunk=heap_pop_split(_head, size);
-    //fprintf(stderr,"HEAP USED %ld LENGTH %ld\n",_head->heap->used,_head->heap->length);
     pthread_mutex_unlock(&lock);
+
+    if (heap_chunk==NULL) {
+        fprintf(stderr,"BigMaac : Failed to find available space\n");
+        assert(heap_chunk!=NULL);
+    }
 
     void * ret_ptr = mmap(heap_chunk->ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);	
     if (ret_ptr==MAP_FAILED) {
         fprintf(stderr,"Bigmaac: Failed to mmmap\n");
+        assert(ret_ptr!=MAP_FAILED);
     }
-    close(fd);
 
-    return (Chunk){ heap_chunk->ptr, size};
+    close(fd);//mmap keeps the fd open now
+
+    return (Chunk){ .ptr=heap_chunk->ptr, .size=size};
 }
 
 int remove_chunk_with_ptr(void * ptr, Chunk * c) {
@@ -602,7 +622,8 @@ int remove_chunk_with_ptr(void * ptr, Chunk * c) {
     void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
     //void * remap = mmap(n->ptr, n->size, PROT_READ, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
     if (remap==NULL) {
-        printf("Oh dear, something went wrong with munmap()! %s\n", strerror(errno));
+        fprintf(stderr,"Oh dear, something went wrong with munmap()! %s\n", strerror(errno));
+        return 0;
     }
 
     heap_free_node(_head,n);
@@ -620,16 +641,13 @@ void *malloc(size_t size)
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
-    if (load_state<2) {
-        return NULL;
-    }
 
-    if (size==0) {
-        return NULL;
+    if (load_state<3 || size==0) {
+        return real_malloc(size);
     }
 
     void *p = NULL;
-    if (load_state==3 && size>min_size) {
+    if (size>min_size) {
         Chunk c=create_chunk(size);
         p=c.ptr;
     } else {
@@ -644,25 +662,24 @@ void *malloc(size_t size)
 
 void *calloc(size_t count, size_t size)
 {
-
-    if(load_state==0 && real_malloc==NULL) {
+    if (load_state>0 && load_state<3) {
+        return NULL;
+    }
+    if(load_state==0 || real_malloc==NULL) {
         bigmaac_init();
     }
-    if (load_state<2) {
-        return NULL;
+
+    if (load_state<3 || count==0 || size==0) {
+        return real_calloc(count,size);
     }
 
-    if (count==0 || size==0) {
-        return NULL;
-    }
-    size=count*size;
-
+    //library is loaded and count/size are reasonable
     void *p = NULL;
-    if (load_state==3 && size>min_size) {
-        Chunk c=create_chunk(size);
+    if (size>min_size) {
+        Chunk c=create_chunk(count*size);
         p=c.ptr;
     } else {
-        p = real_calloc(1,size);
+        p = real_calloc(count,size);
     }
     return p;
 }
@@ -672,31 +689,58 @@ void *realloc(void * ptr, size_t size)
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
+
+    //if library is not loaded use real_realloc
+    if (load_state<3) {
+        return real_realloc(ptr,size);
+    }
+
+    //if ptr is NULL then realloc is just malloc
     if (ptr==NULL) {
         return malloc(size);
     }
+
+    //if size==0 then this is just a free call
     if (size==0) {
         free(ptr);
         return NULL;
     }
-    if (load_state==3 && (ptr>=base_fries && ptr<end_bigmaac)) {
+
+    //currently managed by BigMaac
+    if (ptr>=base_fries && ptr<end_bigmaac) {
+        //check if already allocated is big enough
+        pthread_mutex_lock(&lock);
+        node * n = heap_find_node(_head , ptr);
+        if (n==NULL) {
+            fprintf(stderr,"Cannot find node in BigMaac\n");
+            assert(n!=NULL);
+        }   
+        pthread_mutex_unlock(&lock);
+        if (n->size>=size) {
+            return ptr;
+        }
+
+        //existing chunk is not big enough
         Chunk c;
-        //c=create_chunk(size);
         if (size>min_size) { //keep it managed here
             c=create_chunk(size);
+            c=(Chunk){ .ptr=real_malloc(size), .size=size };
         } else {
+            c=create_chunk(size);
             c=(Chunk){ .ptr=real_malloc(size), .size=size };
         }
         int r=remove_chunk_with_ptr(ptr,&c); //Check if this pointer is>> address space reserved fr mmap
         if (r==0){ 
             fprintf(stderr,"BigMaac: failed to find part of memory\n");
-            assert(1==0);
+            assert(r>0); //exit
         }
         return c.ptr;            
     }
 
+    //currently managed by system
     void *p = NULL;
-    if (load_state==3 && size>min_size) {
+    //if (size>min_size && size) {
+    if (size>24476 && size<25476) { //debug pytest
         void* mallocd_p = real_realloc(ptr,size); //we have no idea of previous size
         if (mallocd_p==NULL) {
             fprintf(stderr,"BigMalloc: Failed to malloc\n");
@@ -704,8 +748,9 @@ void *realloc(void * ptr, size_t size)
         }
         Chunk c=create_chunk(size);
         p=c.ptr;
-
+        assert(1==0);
         memcpy(p,mallocd_p,size);
+
         real_free((size_t)mallocd_p);
     } else {
         p = real_realloc(ptr,size);
@@ -715,20 +760,21 @@ void *realloc(void * ptr, size_t size)
 
 
 void free(void* ptr) {
-    if (load_state<0) {
-        return;
-    }
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
 
-    if (load_state!=3 || ptr<base_fries || ptr>=end_bigmaac) {
+    //if ptr is managed by system or BigMaac is not loaded yet
+    if (load_state<3 || ptr<base_fries || ptr>=end_bigmaac) {
         real_free((size_t)ptr);
         return;
     }
+
+    //ptr is managed by BigMaac and library is fully loaded
     int chunks_removed=remove_chunk_with_ptr(ptr,NULL); //Check if this pointer is>> address space reserved fr mmap 
     if (chunks_removed==0) {
         fprintf(stderr,"BigMaac: Free was called on pointer that was not alloc'd %p\n",ptr);
+        assert(chunks_removed>0); //exit
     }
 }
 
