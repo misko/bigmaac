@@ -20,7 +20,7 @@ int main() {
     int checksums[N];
     int sizes[N];
 
-    int n_ints=DEFAULT_MIN_SIZE/sizeof(int);
+    int n_ints=DEFAULT_MIN_BIGMAAC_SIZE/(16*sizeof(int));
     n_ints++; //make sure its big enough to trigger
     //lets test some mallocs
     fprintf(stderr,"Malloc\n");
