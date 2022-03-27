@@ -467,6 +467,9 @@ static void bigmaac_init(void)
     const char * env_min_size_fry=getenv("BIGMAAC_MIN_FRY_SIZE");
     if (env_min_size_fry!=NULL) {
         sscanf(env_min_size_fry, "%zu", &min_size_fry);
+    } 
+    if (min_size_fry==0) {
+        min_size_fry=min_size_bigmaac; //disabled
     }
 
     const char * env_size_fries=getenv("SIZE_FRIES");
