@@ -30,8 +30,8 @@ For example,
 To run test cases (generate checksums with and without library usage), 
 `make test`
 
-# But I want fries with that too!
-Memory requests larger than `BIGMAAC_MIN_BIGMAAC_SIZE` are swapped using mmap with each memory request being backed by a separate file on the swap partition. To be used with mmap these requests are aligned to a multiple of page size (often 4096bytes) which makes this method of swapping inefficient for smaller (small fries) memory allocations. To handle small fries (<<page_size) a new level of paging is used.
+# But I want fries with that!
+Memory requests larger than `BIGMAAC_MIN_BIGMAAC_SIZE` are swapped using mmap with each memory request being backed by a separate file on the swap partition. In order for these to be valid (efficient) mmap mappings memory requests are aligned to a multiple of page size (often 4096bytes) which makes this method of swapping inefficient for smaller (small fries) memory allocations. To handle small fries (<<page_size) a new level of paging is used.
 
 BIGMAACS are sent to a preallocated 512GB (env variable `SIZE_BIGMAAC`) virtual address space, each BIGMAAC is backed by its own file on the swap partition [ page aligned ]
 
@@ -41,4 +41,15 @@ For example if you would like to swap all memory allocations above 10MB using BI
 
 `LD_PRELOAD=./bigmaac.so BIGMAAC_MIN_BIGMAAC_SIZE=10485760 BIGMAAC_MIN_FRY_SIZE=128 your-executable with all the arguments`
 
+The above command will swap all memory allocations larger than 128 bytes, if the allocation is larger than 10MB it will be swapped to its own virtual file on the swap partition. For memory allocations smaller than or equal to 128 bytes the system memory functions are directly called.
+
+# Choosing the swap partition 
+By default `/tmp/` is used for swapping memory to disk. If you would like to use a different swap partition you need to change the enviornment variable,
+
+`LD_PRELOAD=./bigmaac.so BIGMAAC_TEMPLATE=/swap-partition/bigmaax.XXXXXXXX your-executable with all the arguments`
+
+Once a temporary file is opened, it is immediately removed from disk and only the file description remains open in the process running wrapped by BIGMAAC. Once the process dies, the kernel removes the swap files. This gaurantees that no swap files are left behind after the application is done.
+
+# How efficient is this?
+The main focus of BIGMAAC is to swap larger memory calls, things like large data matricies that dont always behave as random access and are variable from run to run. To avoid adding overhead to smaller memory calls, all of BIGMAAC and FRIES are kept in a contiguous 1TB (512GB BIGMAAC `env SIZE_BIGMAAC` / 512GB FRIES `env SIZE_FRIES`) part of the virtual address space. This allows a simple two pointer comparison to determine if a memory allocation is managed by BIGMAAC or the system library, hopefully adding very minimal overhead to calls that pass through.
 
