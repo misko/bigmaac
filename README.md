@@ -6,6 +6,8 @@ BigMaac can be used in userspace (e.g. inside Kubernetes containers) to enable s
 
 BigMaac intercepts calls to memory management that would normally get mapped directly to the heap/RAM and instead returns memory allocated from an alternative source (SSD/Disk).
 
+![Schematic of memory allocation using BigMaac](./bigmaac_schematic.png)
+
 The specific calls BigMaac intercepts are, 
 
 `malloc()`, `calloc()`, `realloc()` and `free()`
