@@ -1,4 +1,10 @@
-all: bigmaac.so bigmaac_debug.so preload test_bigmaac test
+all: bigmaac.so bigmaac_debug.so preload test_bigmaac test bigmaac_main bigmaac_main_debug
+
+bigmaac_main: bigmaac.c bigmaac.h
+	gcc -DMAIN bigmaac.c -o bigmaac_main -Wall -g -ldl -fopenmp
+
+bigmaac_main_debug: bigmaac.c bigmaac.h
+	gcc -DMAIN -DDEBUG bigmaac.c -o bigmaac_main_debug -Wall -g -ldl -fopenmp
 
 bigmaac.so: bigmaac.c bigmaac.h
 	gcc -shared -fPIC bigmaac.c -o bigmaac.so -ldl -Wall -O3

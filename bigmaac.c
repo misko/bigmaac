@@ -506,7 +506,7 @@ static void bigmaac_init(void)
     }
 
     if (min_size_fry>min_size_bigmaac) {
-        fprintf(stderr,"BigMaac: Failed to initialize library, fries must be smaller than bigmaac\n");
+        fprintf(stderr,"BigMaac: Failed to initialize library, fries must be smaller than bigmaac, %ld %ld\n",min_size_fry,min_size_bigmaac);
         load_state=-1;
         return;
     }
@@ -825,3 +825,67 @@ void free(void* ptr) {
     }
 }
 
+
+#ifdef MAIN
+#define T 32
+#define N (4096*16)
+#define N_size 1024*32
+#define X 1024*16
+
+#include <omp.h>
+
+int ** ptrs;
+size_t * sizes;
+
+
+int main() {
+    ptrs=(int**)calloc(1,sizeof(int*)*T*N);
+    sizes=(size_t*)calloc(1,sizeof(size_t)*T*N);
+    for (int i=0; i<N*T; i++) {
+        ptrs[i]=NULL;
+        sizes[i]=0;
+
+    }
+omp_set_num_threads(T);
+#pragma omp parallel 
+    {
+    int t = omp_get_thread_num();
+        fprintf(stderr,"T%d\n",t);
+    srand(123+t);
+        for (int i=1; i<N; i++) {
+            if (i%25==0) {
+                fprintf(stderr,"%d: %d\n",t,i);
+            }
+            int r = rand();
+            int x = (r%X)-X/2;
+            if (i%2==0) {
+                ptrs[i+t*N]=(int*)malloc((N_size+x)*sizeof(int));
+            } else {
+                ptrs[i+t*N]=(int*)calloc(1,(N_size+x)*sizeof(int));
+            }
+            sizes[i+t*N]=N_size+x;
+            for (int j=0; j<N_size+x; j++) {
+                ptrs[i+t*N][j]=rand();
+            }
+
+            //lets free something
+            r = rand();
+            x = (r%X)-X/2;
+            int k=r%i+t*N;
+            if (ptrs[k]!=NULL) {
+                if (k%2==0) {
+                    free(ptrs[k]);
+                    ptrs[k]=NULL;
+                    sizes[k]=0;    
+                } else {
+                    int new_size = sizes[k]+x;
+                    ptrs[k]=realloc(ptrs[k],new_size*sizeof(int));
+                    for (int j=0; j<new_size; j++){ 
+                        ptrs[k][j]=rand();
+                    }
+                }
+            }
+        }
+    }
+}
+#endif
