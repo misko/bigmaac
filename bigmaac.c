@@ -25,6 +25,11 @@
     na[idx_a]=na[idx_b]; \
     na[idx_b]=tmp; \
 }
+#define UNLINK(n) { \
+    node * tmp = n; \
+    tmp->next->previous=tmp->previous; \
+    tmp->previous->next=tmp->next; \
+}
 
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
@@ -51,24 +56,24 @@ typedef struct node {
 } node;
 
 //heap operations
-static void heap_remove_idx(heap * heap, int idx);
-static void heapify_up(heap * heap, int idx);
-static void heapify_down(heap * heap, int idx);
-static int heap_insert(node * head, node * n);
-static int heap_free_node(node * head, node * n);
-static node * heap_pop_split(node* head, size_t size);
-static node * heap_find_node(void * ptr);
-static void heapify_down(heap * heap, int idx);
+static void heap_remove_idx(heap * const heap, const int idx);
+static void heapify_up(heap * const heap, const int idx);
+static void heapify_down(heap * const heap, const int idx);
+static int heap_insert(node * const head, node * const n);
+static int heap_free_node(node * const head, node * const n);
+static node * heap_pop_split(node * const head, const size_t size);
+static node * heap_find_node(void * const ptr);
+static void heapify_down(heap * const heap, const int idx);
 
 //linked list operations
-static node * ll_new(void* ptr, size_t size);
+static node * ll_new(void * const ptr, const size_t size);
 
 static void bigmaac_init(void);
 
 //BigMaac helper functions
-static int mmap_tmpfile(void * ptr, size_t size);
-static int remove_chunk_with_ptr(void * ptr, void * prev_ptr, size_t prev_size);
-static void* create_chunk(size_t size);
+static int mmap_tmpfile(void * const ptr, const size_t size);
+static int remove_chunk_with_ptr(void * const ptr, void * const prev_ptr, const size_t prev_size);
+static void* create_chunk(const size_t size);
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -188,7 +193,7 @@ static inline void log_bm(const char *data, ...){}
 
 // BigMaac heap
 
-static void heap_remove_idx(heap * heap, int idx) {
+static void heap_remove_idx(heap * const heap, const int idx) {
     if (heap->used==1) {
         heap->used=0;
         heap->node_array[0]->heap_idx=-1;
@@ -204,12 +209,12 @@ static void heap_remove_idx(heap * heap, int idx) {
     heapify_down(heap,idx);
 }
 
-static void heapify_up(heap * heap, int idx) {
+static void heapify_up(heap * const heap, const int idx) {
     if (idx==0) { //this node has no parent
         return;
     }
 
-    int parent_idx = (idx-1)/2;
+    const int parent_idx = (idx-1)/2;
 
     if (LARGER_GAP(heap,idx,parent_idx)!=parent_idx) {
         SWAP_NODES(heap->node_array,idx,parent_idx);
@@ -217,11 +222,11 @@ static void heapify_up(heap * heap, int idx) {
     }
 }
 
-static void heapify_down(heap * heap, int idx) {
+static void heapify_down(heap * const heap, const int idx) {
     int largest_idx=idx;
 
-    int left_child_idx = (idx+1)*2-1;
-    int right_child_idx = (idx+1)*2;
+    const int left_child_idx = (idx+1)*2-1;
+    const int right_child_idx = (idx+1)*2;
 
     if (left_child_idx<heap->used) {
         largest_idx=LARGER_GAP(heap,largest_idx,left_child_idx);
@@ -235,7 +240,7 @@ static void heapify_down(heap * heap, int idx) {
     } // else we are done
 }
 
-static int heap_insert(node * head, node * n) {
+static int heap_insert(node * const head, node * const n) {
     heap * heap = head->heap;
     if (heap->used==heap->length) {
         heap->node_array=(node**)real_realloc(heap->node_array,sizeof(node*)*heap->length*2);
@@ -255,41 +260,35 @@ static int heap_insert(node * head, node * n) {
     return 0;
 }
 
-static int heap_free_node(node * head, node * n) {
+static int heap_free_node(node * const head, node * const n) {
+#ifdef DEBUG
     assert(n->in_use==IN_USE);
+#endif
     if (n->next!=NULL && n->next->in_use==FREE) {
         if (n->previous!=NULL && n->previous->in_use==FREE) {
-            //merge previous into current
-            node * tmp = n->previous; //node to remove
-
             //update size and pointer
-            n->size+=tmp->size;
-            n->ptr=tmp->ptr;
+            n->size+=n->previous->size;
+            n->ptr=n->previous->ptr;
 
             //unlink the node tmp
-            tmp->previous->next=n;
-            n->previous=tmp->previous;
+            node * tmp = n->previous;
+            UNLINK(n->previous);
 
             heap_remove_idx(head->heap,tmp->heap_idx);
             real_free((size_t)tmp);
         }
-        //add it to the next node
+        //update size and pointer 
         n->next->size+=n->size;
-        //update the pointer to this..
         n->next->ptr=n->ptr;
-        //unlink this node from ll
-        n->next->previous=n->previous;
-        n->previous->next=n->next;
-        //TODO free this node?
+
+        UNLINK(n);
         heapify_up(head->heap, n->next->heap_idx);
         real_free((size_t)n);
     } else if (n->previous!=NULL && n->previous->in_use==FREE) {
-        //add it to the previous node
+        //add it to the previous node 
         n->previous->size+=n->size;
-        //unlnk this node from ll
-        n->next->previous=n->previous;
-        n->previous->next=n->next;
 
+        UNLINK(n);
         heapify_up(head->heap, n->previous->heap_idx);
         real_free((size_t)n);
     } else { //add a whole new node
@@ -299,7 +298,7 @@ static int heap_free_node(node * head, node * n) {
     return 0;
 }
 
-static node * heap_pop_split(node* head, size_t size) {
+static node * heap_pop_split(node * const head, const size_t size) {
     verify_memory(head,0);
     if (head->heap->used==0) {
         return NULL;
@@ -311,17 +310,16 @@ static node * heap_pop_split(node* head, size_t size) {
     node * free_node = node_array[0];
     if (free_node->size<size) {
         return NULL;
-        //Try reserved space?
     }
 
     //check left and right child ( avoid further fragmenting largest chunk )
     //How can you have any pudding if you dont eat yer meat?
-    int left_child_idx=1;
+    const int left_child_idx=1;
     if (heap->used>left_child_idx 
             && node_array[left_child_idx]->size>=size) {
         free_node=node_array[left_child_idx];
     }
-    int right_child_idx=2;
+    const int right_child_idx=2;
     if (heap->used>right_child_idx 
             && node_array[right_child_idx]->size>=size 
             && node_array[right_child_idx]->size<free_node->size) {
@@ -362,7 +360,7 @@ static node * heap_pop_split(node* head, size_t size) {
     return used_node;
 }
 
-static node * heap_find_node(void * ptr) {
+static node * heap_find_node(void * const ptr) {
     node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
     verify_memory(head,0);
     while (head!=NULL) {
@@ -376,7 +374,7 @@ static node * heap_find_node(void * ptr) {
 
 // BigMaac linked list
 
-static node * ll_new(void* ptr, size_t size) {
+static node * ll_new(void * const ptr, const size_t size) {
     node * head = (node*)real_malloc(sizeof(node)*2);
     if (head==NULL) {
         fprintf(stderr,"BigMalloc heap: failed to make list\n");
@@ -482,7 +480,7 @@ static void bigmaac_init(void)
         sscanf(env_size_bigmaac, "%zu", &size_bigmaac);
     }
 
-    size_t size_total=size_fries+size_bigmaac;
+    const size_t size_total=size_fries+size_bigmaac;
     base_fries = mmap(NULL, size_total, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0); //reserve the full contiguous range
     if (base_fries==MAP_FAILED) {
         fprintf(stderr,"BigMaac: Failed to initialize library %s\n",strerror(errno));
@@ -491,7 +489,7 @@ static void bigmaac_init(void)
         return;
     }
 
-    int ret = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
+    const int ret = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
     if (ret<0) {
         fprintf(stderr,"BigMaac: Failed to initialize library\n");
         load_state=LIBRARY_FAIL;
@@ -514,15 +512,15 @@ static void bigmaac_init(void)
 
 // BigMaac helper functions 
 
-static int mmap_tmpfile(void * ptr, size_t size) {
-    char * filename=(char*)real_malloc(sizeof(char)*(strlen(template)+1));
+static int mmap_tmpfile(void * const ptr, const size_t size) {
+    char * const filename=(char*)real_malloc(sizeof(char)*(strlen(template)+1));
     if (filename==NULL) {
         fprintf(stderr,"Bigmaac: failed to allocate memory in mmap_tmpfile\n");
         return -1;
     }
     strcpy(filename,template);
 
-    int fd=mkstemp(filename);
+    const int fd=mkstemp(filename);
     if (fd<0) {
         fprintf(stderr,"Bigmaac: Failed to make temp file %s\n", strerror(errno));
         real_free((size_t)filename);
@@ -559,7 +557,7 @@ static int mmap_tmpfile(void * ptr, size_t size) {
 }
 
 static void * create_chunk(size_t size) {
-    node * head = size>min_size_bigmaac ? _head_bigmaacs : _head_fries; //TODO lock per head?
+    node * const head = size>min_size_bigmaac ? _head_bigmaacs : _head_fries; //TODO lock per head?
     pthread_mutex_lock(&lock);
     //page align the size requested
     if (head==_head_bigmaacs) {
@@ -584,7 +582,7 @@ static void * create_chunk(size_t size) {
     return heap_chunk->ptr;
 }
 
-static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
+static int remove_chunk_with_ptr(void * const ptr, void * const new_ptr, const size_t new_size) {
     pthread_mutex_lock(&lock);
 
     node * n = heap_find_node(ptr);
@@ -595,14 +593,14 @@ static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
     }   
 
     if (new_ptr!=NULL) {
-        size_t m = ((n->size)<new_size) ? n->size : new_size;
+        const size_t m = ((n->size)<new_size) ? n->size : new_size;
         memcpy(new_ptr,n->ptr,m);
         log_bm("%p <- %p, %ld\n",new_ptr,n->ptr, m);
     } 
 
     node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
     if (head==_head_bigmaacs) {
-        void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
+        const void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
         if (remap==NULL) {
             fprintf(stderr,"BigMaac: wrong with munmap()! %s\n", strerror(errno));
             pthread_mutex_unlock(&lock);
@@ -615,7 +613,7 @@ static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
     }
 
     verify_memory(head,0);
-    int r = heap_free_node(head,n);
+    const int r = heap_free_node(head,n);
     if (r<0) {
         return r;
     }
@@ -691,13 +689,8 @@ void *realloc(void * ptr, size_t size)
         return real_realloc(ptr,size);
     }
 
-    if (ptr==NULL) {
+    if (ptr==NULL || size==0) {
         return malloc(size);
-    }
-
-    if (size==0) {
-        free(ptr);
-        return NULL;
     }
 
     //currently managed by BigMaac
