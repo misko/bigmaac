@@ -375,29 +375,27 @@ static node * heap_find_node(void * const ptr) {
 // BigMaac linked list
 
 static node * ll_new(void * const ptr, const size_t size) {
-    node * head = (node*)real_malloc(sizeof(node)*2);
+    node * const head = (node*)real_malloc(sizeof(node)*2);
     if (head==NULL) {
         fprintf(stderr,"BigMalloc heap: failed to make list\n");
         return NULL;
     }
 
-    node * e = head+1;
-    *e = (node){
+    head[0] = (node){
+        .size = 0,
+            .ptr = NULL,
+            .next = head+1,
+            .previous = NULL,
+            .in_use = IN_USE,
+            .heap_idx = -1
+    };
+    head[1] = (node){
         .size = size,
             .ptr = ptr,
             .next = NULL,
             .previous = head,
             .in_use = FREE,
             .heap_idx = 0
-    };
-
-    *head = (node){
-        .size = 0,
-            .ptr = NULL,
-            .next = e,
-            .previous = NULL,
-            .in_use = IN_USE,
-            .heap_idx = -1
     };
 
     head->heap = (heap*)real_malloc(sizeof(heap));
@@ -412,7 +410,7 @@ static node * ll_new(void * const ptr, const size_t size) {
     }
     head->heap->length=1;
     head->heap->used=1;
-    head->heap->node_array[0]=e;
+    head->heap->node_array[0]=head+1;
 
     return head;
 }  
