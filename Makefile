@@ -12,7 +12,7 @@ preload: preload.c
 test_bigmaac: test_bigmaac.c bigmaac.h
 	gcc -Wall test_bigmaac.c -o test_bigmaac -g
 
-test: test_bigmaac preload
+test: bigmaac.so test_bigmaac preload
 	./test_bigmaac > output_without_bigmaac
 	./preload ./bigmaac.so ./test_bigmaac > output_with_bigmaac
 
