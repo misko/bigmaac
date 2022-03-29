@@ -672,10 +672,6 @@ static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
 
 void *malloc(size_t size)
 {
-    if (load_state<0) {
-        return real_malloc(size);
-    }
-
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
@@ -697,9 +693,6 @@ void *malloc(size_t size)
 
 void *calloc(size_t count, size_t size)
 {
-    if (load_state<0) {
-        return real_calloc(count,size);
-    }
     if (load_state>0 && load_state<3) {
         return NULL;
     }
@@ -732,10 +725,6 @@ void *reallocarray(void * ptr, size_t size,size_t count) {
 
 void *realloc(void * ptr, size_t size)
 {
-    if (load_state<0) {
-        return real_realloc(ptr,size);
-    }
-
     if(load_state==0 && real_malloc==NULL) {
         bigmaac_init();
     }
