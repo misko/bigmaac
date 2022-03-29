@@ -555,12 +555,12 @@ static void bigmaac_init(void)
 // BigMaac helper functions 
 
 static int mmap_tmpfile(void * ptr, size_t size) {
-    char * filename=(char*)real_malloc(sizeof(char)*(strlen(DEFAULT_TEMPLATE)+1));
+    char * filename=(char*)real_malloc(sizeof(char)*(strlen(template)+1));
     if (filename==NULL) {
         fprintf(stderr,"Bigmaac: failed to allocate memory in mmap_tmpfile\n");
         return -1;
     }
-    strcpy(filename,DEFAULT_TEMPLATE);
+    strcpy(filename,template);
 
     int fd=mkstemp(filename);
     if (fd<0) {
@@ -829,7 +829,7 @@ void free(void* ptr) {
 #ifdef MAIN
 #define T 32
 #define N (4096*16)
-#define N_size 1024*32
+#define N_size 1024*16
 #define X 1024*16
 
 #include <omp.h>
@@ -858,13 +858,14 @@ omp_set_num_threads(T);
             }
             int r = rand();
             int x = (r%X)-X/2;
+            size_t sz = N_size<x ? 3 : N_size-x;
             if (i%2==0) {
-                ptrs[i+t*N]=(int*)malloc((N_size+x)*sizeof(int));
+                ptrs[i+t*N]=(int*)malloc(sz*sizeof(int));
             } else {
-                ptrs[i+t*N]=(int*)calloc(1,(N_size+x)*sizeof(int));
+                ptrs[i+t*N]=(int*)calloc(1,sz*sizeof(int));
             }
-            sizes[i+t*N]=N_size+x;
-            for (int j=0; j<N_size+x; j++) {
+            sizes[i+t*N]=sz;
+            for (int j=0; j<sz; j++) {
                 ptrs[i+t*N][j]=rand();
             }
 
@@ -878,7 +879,7 @@ omp_set_num_threads(T);
                     ptrs[k]=NULL;
                     sizes[k]=0;    
                 } else {
-                    int new_size = sizes[k]+x;
+                    size_t new_size = sizes[k]<x ? 3 : sizes[k]-x;
                     ptrs[k]=realloc(ptrs[k],new_size*sizeof(int));
                     for (int j=0; j<new_size; j++){ 
                         ptrs[k][j]=rand();
