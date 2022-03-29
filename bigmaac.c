@@ -18,6 +18,13 @@
 #define OOM() fprintf(stderr,"BigMaac : Failed to find available space\n"); errno=ENOMEM;
 #define LARGER_GAP(h,a,b) (((h->node_array[a]->size)>(h->node_array[b]->size)) ? a : b)
 #define SIZE_TO_MULTIPLE(size,multiple) ( (size % multiple)>0 ? size+(multiple-size%multiple) : size )
+#define SWAP_NODES(na,idx_a,idx_b) { \
+    na[idx_a]->heap_idx=idx_b; \
+    na[idx_b]->heap_idx=idx_a; \
+    struct node * tmp = na[idx_a]; \
+    na[idx_a]=na[idx_b]; \
+    na[idx_b]=tmp; \
+}
 
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
@@ -205,14 +212,7 @@ static void heapify_up(heap * heap, int idx) {
     int parent_idx = (idx-1)/2;
 
     if (LARGER_GAP(heap,idx,parent_idx)!=parent_idx) {
-        node ** node_array = heap->node_array;
-        //swap with the parent and keep going
-        node_array[idx]->heap_idx=parent_idx;
-        node_array[parent_idx]->heap_idx=idx;
-        //now actuall swap them
-        node * tmp = node_array[idx];
-        node_array[idx]=node_array[parent_idx];
-        node_array[parent_idx]=tmp;
+        SWAP_NODES(heap->node_array,idx,parent_idx);
         heapify_up(heap,parent_idx);
     }
 }
@@ -230,16 +230,7 @@ static void heapify_down(heap * heap, int idx) {
         largest_idx=LARGER_GAP(heap,largest_idx,right_child_idx);
     }
     if (largest_idx!=idx) {
-        node ** node_array = heap->node_array;
-        //swap idx with largest_idx
-        //first swap heap_idxs
-        node_array[idx]->heap_idx=largest_idx;
-        node_array[largest_idx]->heap_idx=idx;
-        //now switch places
-        node * tmp = node_array[idx];
-        node_array[idx]=node_array[largest_idx];
-        node_array[largest_idx]=tmp;
-
+        SWAP_NODES(heap->node_array,idx,largest_idx);
         heapify_down(heap,largest_idx);
     } // else we are done
 }
