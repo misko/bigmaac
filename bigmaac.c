@@ -558,7 +558,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
 
 static void * create_chunk(size_t size) {
     node * const head = size>min_size_bigmaac ? _head_bigmaacs : _head_fries; //TODO lock per head?
-    pthread_mutex_lock(&lock);
+    pthread_mutex_lock(&lock); //keep lock here so that verify is consistent
     //page align the size requested
     if (head==_head_bigmaacs) {
         size=SIZE_TO_MULTIPLE(size,page_size);
@@ -614,11 +614,12 @@ static int remove_chunk_with_ptr(void * const ptr, void * const new_ptr, const s
 
     verify_memory(head,0);
     const int r = heap_free_node(head,n);
+    verify_memory(head,1);
+    pthread_mutex_unlock(&lock);
+
     if (r<0) {
         return r;
     }
-    verify_memory(head,1);
-    pthread_mutex_unlock(&lock);
 
     return 1;
 }
