@@ -17,11 +17,6 @@
 
 #define OOM() fprintf(stderr,"BigMaac : Failed to find available space\n"); errno=ENOMEM;
 
-typedef struct Chunks {
-    char* ptr;
-    size_t size; 
-} Chunk;
-
 typedef struct heap {
     size_t used; 
     size_t length; 
