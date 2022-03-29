@@ -541,7 +541,8 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
 
     void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);	
     if (ret_ptr==MAP_FAILED) {
-        fprintf(stderr,"BigMacc: mmap failed! %s\n", strerror(errno));
+        fprintf(stderr,"BigMacc: mmap failed! mmap() used_fries %ld , used_bigmaacs %ld , this request %ld:  %s\n",
+               used_fries,used_bigmaacs, size, strerror(errno));
         return -1;
     }
 
@@ -713,10 +714,14 @@ void *realloc(void * ptr, size_t size)
         if (size>min_size_fry) {
             p=create_chunk(size);
             if (p==NULL) {
-                OOM(); return NULL;
+                OOM(); //set errno
             }
         } else  { //if this isnt a fry or big maac or bigmaac failed
             p=real_malloc(size);
+        }
+
+        if (p==NULL) {
+            return NULL;
         }
 
         int r=remove_chunk_with_ptr(ptr,p,size); //Check if this pointer is>> address space reserved fr mmap
@@ -734,11 +739,10 @@ void *realloc(void * ptr, size_t size)
     if (size>min_size_fry) {
         void* mallocd_p = real_realloc(ptr,size); //we have no idea of previous size
         if (mallocd_p==NULL) {
-            fprintf(stderr,"BigMalloc: Failed to malloc\n");
-            assert(1==0);
+            return NULL; //errno already set
         }
-        void * p=create_chunk(size);
 
+        void * p=create_chunk(size);
         if (p!=NULL) {
             memcpy(p,mallocd_p,size);
             real_free((size_t)mallocd_p);
