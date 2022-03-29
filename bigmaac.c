@@ -41,10 +41,6 @@ static node * _head_fries; // head of the heap
 #define FREE 1
 
 //debug functions
-#ifdef DEBUG
-static void print_ll(node * head);
-static void print_heap(heap* heap);
-#endif
 static void verify_memory(node * head,int global);
 
 //inlineable functions
@@ -99,12 +95,13 @@ static size_t page_size = 0;
 static int load_state=0;
 
 #ifdef DEBUG
+static void print_ll(node * head);
+static void print_heap(heap* heap);
 static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 static FILE * f;
 static int this_pid = 0;
-#endif
+
 void log_bm(const char *data, ...){
-#ifdef DEBUG
     pthread_mutex_lock(&log_lock);
     int pid = getpid();
     if (pid!=this_pid) {
@@ -122,13 +119,9 @@ void log_bm(const char *data, ...){
     fflush(f);
     fsync(fileno(f));
     pthread_mutex_unlock(&log_lock);
-#endif
 }
 
-
-// DEBUG 
 static inline void verify_memory(node * head, int global) {
-#ifdef DEBUG
     //print_heap(head->heap);
     //print_ll(head);
     size_t heap_free=0;
@@ -158,10 +151,8 @@ static inline void verify_memory(node * head, int global) {
     }
     assert(heap_free==ll_free);
     assert(t==size_bigmaac);
-#endif
 }
 
-#ifdef DEBUG
 static void print_ll(node * head) {
     while (head!=NULL) {
         fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, ptr=%p\n",head,head->next,head->in_use,head->previous,head->size,head->ptr);
@@ -177,7 +168,14 @@ static void print_heap(heap* heap) {
                 heap->node_array[i]->size);
     }
 }
+
+#else
+
+static inline void verify_memory(node * head, int global) { }
+void log_bm(const char *data, ...){}
+
 #endif
+
 
 //Inlineables 
 
