@@ -16,6 +16,11 @@
 #include "bigmaac.h"
 
 #define OOM() fprintf(stderr,"BigMaac : Failed to find available space\n"); errno=ENOMEM;
+#define LARGER_GAP(h,a,b) (((h->node_array[a]->size)>(h->node_array[b]->size)) ? a : b)
+#define SIZE_TO_MULTIPLE(size,multiple) ( (size % multiple)>0 ? size+(multiple-size%multiple) : size )
+
+#define IN_USE 0
+#define FREE 1
 
 typedef struct heap {
     size_t used; 
@@ -32,20 +37,6 @@ typedef struct node {
     size_t size;
     heap * heap;
 } node;
-
-static node * _head_bigmaacs; // head of the heap
-static node * _head_fries; // head of the heap
-
-
-#define IN_USE 0
-#define FREE 1
-
-//debug functions
-static void verify_memory(node * head,int global);
-
-//inlineable functions
-static inline int larger_gap(heap * heap, int idx_a, int idx_b);
-static inline size_t size_to_page_multiple(size_t size,size_t page);
 
 //heap operations
 static void heap_remove_idx(heap * heap, int idx);
@@ -75,6 +66,10 @@ static void* (*real_free)(size_t)=NULL;
 static void* (*real_realloc)(void*, size_t)=NULL;
 static void* (*real_reallocarray)(void*,size_t,size_t)=NULL;
 
+//GLOBAL vars
+static node * _head_bigmaacs; // head of the bigmaac heap
+static node * _head_fries; // head of the fries heap
+
 static size_t min_size_bigmaac=DEFAULT_MIN_BIGMAAC_SIZE; 
 static size_t min_size_fry=DEFAULT_MIN_FRY_SIZE; 
 
@@ -94,6 +89,9 @@ static size_t page_size = 0;
 
 static int load_state=0;
 
+//debug functions
+static inline void verify_memory(node * head,int global);
+static inline void log_bm(const char *data, ...);
 #ifdef DEBUG
 static void print_ll(node * head);
 static void print_heap(heap* heap);
@@ -172,29 +170,9 @@ static void print_heap(heap* heap) {
 #else
 
 static inline void verify_memory(node * head, int global) { }
-void log_bm(const char *data, ...){}
+static inline void log_bm(const char *data, ...){}
 
 #endif
-
-
-//Inlineables 
-
-static int larger_gap(heap * heap, int idx_a, int idx_b) {
-    return heap->node_array[idx_a]->size>heap->node_array[idx_b]->size ? idx_a : idx_b;
-}
-
-static inline size_t size_to_page_multiple(size_t size,size_t page) {
-    size_t old_size=size;
-
-    size_t residual=size % page;
-    if ( residual != 0) {
-        size=size+(page-residual);
-    }
-
-    assert(old_size<=size);
-
-    return size;
-}
 
 // BigMaac heap
 
@@ -221,7 +199,7 @@ static void heapify_up(heap * heap, int idx) {
 
     int parent_idx = (idx-1)/2;
 
-    if (larger_gap(heap,idx,parent_idx)!=parent_idx) {
+    if (LARGER_GAP(heap,idx,parent_idx)!=parent_idx) {
         node ** node_array = heap->node_array;
         //swap with the parent and keep going
         node_array[idx]->heap_idx=parent_idx;
@@ -241,10 +219,10 @@ static void heapify_down(heap * heap, int idx) {
     int right_child_idx = (idx+1)*2;
 
     if (left_child_idx<heap->used) {
-        largest_idx=larger_gap(heap,largest_idx,left_child_idx);
+        largest_idx=LARGER_GAP(heap,largest_idx,left_child_idx);
     }
     if (right_child_idx<heap->used) {
-        largest_idx=larger_gap(heap,largest_idx,right_child_idx);
+        largest_idx=LARGER_GAP(heap,largest_idx,right_child_idx);
     }
     if (largest_idx!=idx) {
         node ** node_array = heap->node_array;
@@ -459,11 +437,7 @@ static void bigmaac_init(void)
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
-#ifdef NOHEAP
-    fprintf(stderr,"Loading Bigmaac NoHeap!\n");
-#else
     fprintf(stderr,"Loading Bigmaac Heap!\n");
-#endif
     load_state=1;
     real_malloc = dlsym(RTLD_NEXT, "malloc");
     real_free = dlsym(RTLD_NEXT, "free");
@@ -597,10 +571,10 @@ static void * create_chunk(size_t size) {
     pthread_mutex_lock(&lock);
     //page align the size requested
     if (head==_head_bigmaacs) {
-        size=size_to_page_multiple(size,page_size);
+        size=SIZE_TO_MULTIPLE(size,page_size);
         used_bigmaacs+=size;
     } else {
-        size=size_to_page_multiple(size,fry_size_multiple);
+        size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
         used_fries+=size;
     }
 
