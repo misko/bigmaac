@@ -516,7 +516,6 @@ static void bigmaac_init(void)
     //initialize a heap
     _head_bigmaacs = ll_new(base_bigmaac,size_bigmaac);  
     _head_fries = ll_new(base_fries,size_fries);   
-    assert(_head_fries!=_head_bigmaacs);
 
     load_state=LOADED;
     pthread_mutex_unlock(&lock);
