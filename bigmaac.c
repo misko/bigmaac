@@ -19,8 +19,13 @@
 #define LARGER_GAP(h,a,b) (((h->node_array[a]->size)>(h->node_array[b]->size)) ? a : b)
 #define SIZE_TO_MULTIPLE(size,multiple) ( (size % multiple)>0 ? size+(multiple-size%multiple) : size )
 
-#define IN_USE 0
-#define FREE 1
+enum memory_use { IN_USE=0, FREE=1 };
+enum load_status { LIBRARY_FAIL=-1,
+                  NOT_LOADED=0, 
+                  LOADING_MEM_FUNCS=1,
+                  LOADING_LIBRARY=2,
+                  LOADED=3
+                  };
 
 typedef struct heap {
     size_t used; 
@@ -31,7 +36,7 @@ typedef struct heap {
 typedef struct node {
     struct node * next;
     struct node * previous;
-    int in_use;
+    enum memory_use in_use;
     int heap_idx;
     char * ptr;
     size_t size;
@@ -87,7 +92,7 @@ static size_t used_fries=0;
 static size_t used_bigmaacs=0;
 static size_t page_size = 0;	
 
-static int load_state=0;
+static enum load_status load_state=NOT_LOADED;
 
 //debug functions
 static inline void verify_memory(node * head,int global);
@@ -193,7 +198,7 @@ static void heap_remove_idx(heap * heap, int idx) {
 }
 
 static void heapify_up(heap * heap, int idx) {
-    if (idx==0) {
+    if (idx==0) { //this node has no parent
         return;
     }
 
@@ -238,7 +243,6 @@ static void heapify_down(heap * heap, int idx) {
         heapify_down(heap,largest_idx);
     } // else we are done
 }
-
 
 static int heap_insert(node * head, node * n) {
     heap * heap = head->heap;
@@ -429,16 +433,16 @@ static node * ll_new(void* ptr, size_t size) {
 static void bigmaac_init(void)
 {
     pthread_mutex_lock(&lock);
-    if (load_state<0) {
+    if (load_state==LIBRARY_FAIL) {
         return; //error initializing
     }
-    if (load_state!=0) {
+    if (load_state!=NOT_LOADED) {
         pthread_mutex_unlock(&lock);
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
     fprintf(stderr,"Loading Bigmaac Heap!\n");
-    load_state=1;
+    load_state=LOADING_MEM_FUNCS;
     real_malloc = dlsym(RTLD_NEXT, "malloc");
     real_free = dlsym(RTLD_NEXT, "free");
     real_calloc = dlsym(RTLD_NEXT, "calloc");
@@ -447,7 +451,7 @@ static void bigmaac_init(void)
     if (!real_malloc || !real_free || !real_calloc || !real_realloc || !real_reallocarray) {
         fprintf(stderr, "Error in `dlsym`: %s\n", dlerror());
     }
-    load_state=2;
+    load_state=LOADING_LIBRARY;
 
     log_bm("OPEN LIB\n");
 
@@ -474,7 +478,7 @@ static void bigmaac_init(void)
 
     if (min_size_fry>min_size_bigmaac) {
         fprintf(stderr,"BigMaac: Failed to initialize library, fries must be smaller than bigmaac, %ld %ld\n",min_size_fry,min_size_bigmaac);
-        load_state=-1;
+        load_state=LIBRARY_FAIL;
         return;
     }
 
@@ -491,7 +495,7 @@ static void bigmaac_init(void)
     base_fries = mmap(NULL, size_total, PROT_NONE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0); //reserve the full contiguous range
     if (base_fries==MAP_FAILED) {
         fprintf(stderr,"BigMaac: Failed to initialize library %s\n",strerror(errno));
-        load_state=-1;
+        load_state=LIBRARY_FAIL;
         pthread_mutex_unlock(&lock);
         return;
     }
@@ -499,7 +503,7 @@ static void bigmaac_init(void)
     int ret = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
     if (ret<0) {
         fprintf(stderr,"BigMaac: Failed to initialize library\n");
-        load_state=-1;
+        load_state=LIBRARY_FAIL;
         pthread_mutex_unlock(&lock);
         return;
     } 
@@ -514,10 +518,9 @@ static void bigmaac_init(void)
     _head_fries = ll_new(base_fries,size_fries);   
     assert(_head_fries!=_head_bigmaacs);
 
-    load_state=3;
+    load_state=LOADED;
     pthread_mutex_unlock(&lock);
 }
-
 
 // BigMaac helper functions 
 
@@ -544,8 +547,7 @@ static int mmap_tmpfile(void * ptr, size_t size) {
     }
     real_free((size_t)filename);
 
-    //resize the file
-    ret = ftruncate(fd, size);
+    ret = ftruncate(fd, size); //resize the file
     if (ret!=0) {
         fprintf(stderr,"BigMacc: ftruncate failed! %s\n", strerror(errno));
         return -1;
@@ -593,7 +595,6 @@ static void * create_chunk(size_t size) {
 }
 
 static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
-
     pthread_mutex_lock(&lock);
 
     node * n = heap_find_node(ptr);
@@ -634,16 +635,15 @@ static int remove_chunk_with_ptr(void * ptr, void * new_ptr, size_t new_size) {
     return 1;
 }
 
-
 // BigMaac C library memory functions
 
 void *malloc(size_t size)
 {
-    if(load_state==0 && real_malloc==NULL) {
+    if(load_state==NOT_LOADED && real_malloc==NULL) {
         bigmaac_init();
     }
 
-    if (load_state<3 || size==0) {
+    if (load_state!=LOADED || size==0) {
         return real_malloc(size);
     }
 
@@ -660,14 +660,15 @@ void *malloc(size_t size)
 
 void *calloc(size_t count, size_t size)
 {
-    if (load_state>0 && load_state<3) {
+    if (load_state>NOT_LOADED && load_state<LOADED) {
         return NULL;
     }
-    if(load_state==0 || real_malloc==NULL) {
+
+    if(load_state==NOT_LOADED || real_malloc==NULL) {
         bigmaac_init();
     }
 
-    if (load_state<3 || count==0 || size==0) {
+    if (load_state!=LOADED || count==0 || size==0) {
         return real_calloc(count,size);
     }
 
@@ -692,31 +693,26 @@ void *reallocarray(void * ptr, size_t size,size_t count) {
 
 void *realloc(void * ptr, size_t size)
 {
-    if(load_state==0 && real_malloc==NULL) {
+    if(load_state==NOT_LOADED && real_malloc==NULL) {
         bigmaac_init();
     }
 
-    //if library is not loaded use real_realloc
-    if (load_state<3) {
+    if (load_state!=LOADED) {
         return real_realloc(ptr,size);
     }
 
-    //if ptr is NULL then realloc is just malloc
     if (ptr==NULL) {
         return malloc(size);
     }
 
-    //if size==0 then this is just a free call
     if (size==0) {
         free(ptr);
         return NULL;
     }
 
-
     //currently managed by BigMaac
     if (ptr>=base_fries && ptr<end_bigmaac) {
         //check if already allocated is big enough
-
         pthread_mutex_lock(&lock);
         node * n = heap_find_node(ptr);
         if (n==NULL) {
@@ -773,14 +769,13 @@ void *realloc(void * ptr, size_t size)
     return  real_realloc(ptr,size);
 }
 
-
 void free(void* ptr) {
-    if(load_state==0 && real_malloc==NULL) {
+    if(load_state==NOT_LOADED && real_malloc==NULL) {
         bigmaac_init();
     }
 
     //if ptr is managed by system or BigMaac is not loaded yet
-    if (load_state<3 || ptr<base_fries || ptr>=end_bigmaac) {
+    if (load_state!=LOADED || ptr<base_fries || ptr>=end_bigmaac) {
         real_free((size_t)ptr);
         return;
     }
@@ -792,7 +787,6 @@ void free(void* ptr) {
     }
 }
 
-
 #ifdef MAIN
 #define T 32
 #define N (4096*16)
@@ -803,7 +797,6 @@ void free(void* ptr) {
 
 int ** ptrs;
 size_t * sizes;
-
 
 int main() {
     ptrs=(int**)calloc(1,sizeof(int*)*T*N);
