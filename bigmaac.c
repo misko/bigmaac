@@ -65,8 +65,6 @@ static node * heap_pop_split(node * const head, const size_t size);
 static node * heap_find_node(void * const ptr);
 static void heapify_down(heap * const heap, const int idx);
 
-static int active_mmaps=0;
-
 //linked list operations
 static node * ll_new(void * const ptr, const size_t size);
 
@@ -86,6 +84,8 @@ static void* (*real_realloc)(void*, size_t)=NULL;
 static void* (*real_reallocarray)(void*,size_t,size_t)=NULL;
 
 //GLOBAL vars
+static int active_mmaps=0;
+
 static node * _head_bigmaacs; // head of the bigmaac heap
 static node * _head_fries; // head of the fries heap
 
