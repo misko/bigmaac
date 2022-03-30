@@ -65,6 +65,8 @@ static node * heap_pop_split(node * const head, const size_t size);
 static node * heap_find_node(void * const ptr);
 static void heapify_down(heap * const heap, const int idx);
 
+static int active_mmaps=0;
+
 //linked list operations
 static node * ll_new(void * const ptr, const size_t size);
 
@@ -486,6 +488,7 @@ static void bigmaac_init(void)
         pthread_mutex_unlock(&lock);
         return;
     }
+    active_mmaps++;
 
     const int ret = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
     if (ret<0) {
@@ -527,7 +530,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
 
     int ret = unlink(filename);
     if (ret!=0) {
-        fprintf(stderr,"BigMacc: unlink tmpfile failed! %s\n", strerror(errno));
+        fprintf(stderr,"BigMaac: unlink tmpfile failed! %s\n", strerror(errno));
         real_free((size_t)filename);
         return -1;
     }
@@ -535,20 +538,23 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
 
     ret = ftruncate(fd, size); //resize the file
     if (ret!=0) {
-        fprintf(stderr,"BigMacc: ftruncate failed! %s\n", strerror(errno));
+        fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
         return -1;
     }
-
     void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);	
     if (ret_ptr==MAP_FAILED) {
-        fprintf(stderr,"BigMacc: mmap failed! mmap() used_fries %ld , used_bigmaacs %ld , this request %ld:  %s\n",
-               used_fries,used_bigmaacs, size, strerror(errno));
+        fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+               active_mmaps,
+               1.0-((float)used_fries)/size_fries,
+               1.0-((float)used_bigmaacs)/size_bigmaac, 
+               strerror(errno));
         return -1;
     }
+    active_mmaps++;
 
     ret = close(fd);//mmap keeps the fd open now
-    if (ret_ptr==MAP_FAILED) {
-        fprintf(stderr,"BigMacc: close fd failed! %s\n", strerror(errno));
+    if (ret==-1) {
+        fprintf(stderr,"BigMaac: close fd failed! %s\n", strerror(errno));
         return -1;
     }
 
@@ -575,7 +581,10 @@ static void * create_chunk(size_t size) {
     }
 
     if (head==_head_bigmaacs) {
-        mmap_tmpfile(heap_chunk->ptr,size);
+        int ret = mmap_tmpfile(heap_chunk->ptr,size);
+        if (ret<0) {
+            return NULL;
+        }
     }
 
     return heap_chunk->ptr;
@@ -600,12 +609,12 @@ static int remove_chunk_with_ptr(void * const ptr, void * const new_ptr, const s
     node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
     if (head==_head_bigmaacs) {
         const void * remap = mmap(n->ptr, n->size, PROT_NONE, MAP_ANONYMOUS | MAP_FIXED | MAP_PRIVATE, -1, 0);	
-        if (remap==NULL) {
+        if (remap==MAP_FAILED) {
             fprintf(stderr,"BigMaac: wrong with munmap()! %s\n", strerror(errno));
             pthread_mutex_unlock(&lock);
-            assert(1==0);
             return 0;
         }
+        active_mmaps--;
         used_bigmaacs-=n->size;
     } else {
         used_fries-=n->size;
@@ -700,7 +709,8 @@ void *realloc(void * ptr, size_t size)
         node * n = heap_find_node(ptr);
         if (n==NULL) {
             fprintf(stderr,"BigMaac: Cannot find node in BigMaac\n");
-            assert(n!=NULL);
+            pthread_mutex_unlock(&lock);
+            return NULL;
         }   
         pthread_mutex_unlock(&lock);
 
@@ -729,7 +739,7 @@ void *realloc(void * ptr, size_t size)
             OOM(); return NULL;
         } else if (r==0) {
             fprintf(stderr,"BigMaac: is missing memory address it should have\n");
-            assert(r>0);
+            return NULL;
         }
         return p;            
     }
@@ -769,7 +779,7 @@ void free(void* ptr) {
     int chunks_removed=remove_chunk_with_ptr(ptr,NULL,0); //Check if this pointer is>> address space reserved fr mmap 
     if (chunks_removed==0) {
         fprintf(stderr,"BigMaac: Free was called on pointer that was not alloc'd %p\n",ptr);
-        assert(chunks_removed>0); //exit
+        return;
     }
 }
 
