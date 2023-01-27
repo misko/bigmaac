@@ -520,7 +520,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
         return -1;
     }
     strcpy(filename,template);
-
+    fprintf(stderr,"BIGMAAC: make file %0.2f MB\n",((double)size)/(1024.0*1024.0));
     const int fd=mkstemp(filename);
     if (fd<0) {
         fprintf(stderr,"Bigmaac: Failed to make temp file %s\n", strerror(errno));
