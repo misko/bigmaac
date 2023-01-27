@@ -430,7 +430,7 @@ static void bigmaac_init(void)
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
-    fprintf(stderr,"Loading Bigmaac Heap!\n");
+    fprintf(stderr,"Loading Bigmaac Heap! PID:%d PPID:%d\n",getpid(),getppid());
     load_state=LOADING_MEM_FUNCS;
     real_malloc = dlsym(RTLD_NEXT, "malloc");
     real_free = dlsym(RTLD_NEXT, "free");
@@ -541,7 +541,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
         fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
         return -1;
     }
-    void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);	
+    void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, fd, 0);	
     if (ret_ptr==MAP_FAILED) {
         fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
                active_mmaps,
