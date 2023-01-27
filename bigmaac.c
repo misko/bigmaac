@@ -430,7 +430,7 @@ static void bigmaac_init(void)
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
-    fprintf(stderr,"Loading Bigmaac Heap! PID:%d PPID:%d\n",getpid(),getppid());
+    fprintf(stderr,"Loading Bigmaac Heap X! PID:%d PPID:%d\n",getpid(),getppid());
     load_state=LOADING_MEM_FUNCS;
     real_malloc = dlsym(RTLD_NEXT, "malloc");
     real_free = dlsym(RTLD_NEXT, "free");
