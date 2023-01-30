@@ -645,6 +645,11 @@ void *malloc(size_t size)
     }
 
     if (size>min_size_fry) {
+	fprintf(stderr,"BigMaac: Malloc %lu\n",size);
+        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
+               active_mmaps,
+               1.0-((float)used_fries)/size_fries,
+               1.0-((float)used_bigmaacs)/size_bigmaac); 
         void * p=create_chunk(size);
         if (p==NULL) {
             OOM(); return NULL;
@@ -714,6 +719,11 @@ void *realloc(void * ptr, size_t size)
         }   
         pthread_mutex_unlock(&lock);
 
+	fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
+        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
+               active_mmaps,
+               1.0-((float)used_fries)/size_fries,
+               1.0-((float)used_bigmaacs)/size_bigmaac); 
         //allocated memory is big enough
         if (n->size>=size) {
             return ptr;
