@@ -13,6 +13,11 @@
 #include <string.h>
 #include <assert.h>
 
+#define BIGMAAC_SIGNAL
+#ifdef BIGMAAC_SIGNAL
+#include <signal.h>
+#endif
+
 #include "bigmaac.h"
 
 #define OOM() fprintf(stderr,"BigMaac : Failed to find available space\n"); errno=ENOMEM;
@@ -645,6 +650,9 @@ void *malloc(size_t size)
     }
 
     if (size>min_size_fry) {
+#ifdef BIGMAAC_SIGNAL
+    kill(getpid(), SIGUSR1);
+#endif
 	fprintf(stderr,"BigMaac: Malloc %lu\n",size);
         fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
                active_mmaps,
@@ -676,6 +684,9 @@ void *calloc(size_t count, size_t size)
 
     //library is loaded and count/size are reasonable
     if (size>min_size_fry) {
+#ifdef BIGMAAC_SIGNAL
+    kill(getpid(), SIGUSR1);
+#endif
         void * p=create_chunk(size);
         if (p==NULL) {
             OOM(); return NULL;
@@ -719,6 +730,9 @@ void *realloc(void * ptr, size_t size)
         }   
         pthread_mutex_unlock(&lock);
 
+#ifdef BIGMAAC_SIGNAL
+    kill(getpid(), SIGUSR1);
+#endif
 	fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
         fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
                active_mmaps,
