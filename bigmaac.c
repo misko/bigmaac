@@ -35,7 +35,7 @@
     tmp->next->previous=tmp->previous; \
     tmp->previous->next=tmp->next; \
 }
-
+#define BIGMAAC_EXPECTED(size) (size*2)
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
                   NOT_LOADED=0, 
@@ -658,7 +658,7 @@ void *malloc(size_t size)
                active_mmaps,
                1.0-((float)used_fries)/size_fries,
                1.0-((float)used_bigmaacs)/size_bigmaac); 
-        void * p=create_chunk(size);
+        void * p=create_chunk(BIGMAAC_EXPECTED(size));
         if (p==NULL) {
             OOM(); return NULL;
         }
@@ -746,7 +746,7 @@ void *realloc(void * ptr, size_t size)
         //existing chunk is not big enough
         void *p = NULL;
         if (size>min_size_fry) {
-            p=create_chunk(size);
+            p=create_chunk(BIGMAAC_EXPECTED(size));
             if (p==NULL) {
                 OOM(); //set errno
             }
@@ -776,7 +776,7 @@ void *realloc(void * ptr, size_t size)
             return NULL; //errno already set
         }
 
-        void * p=create_chunk(size);
+        void * p=create_chunk(BIGMAAC_EXPECTED(size));
         if (p!=NULL) {
             memcpy(p,mallocd_p,size);
             real_free((size_t)mallocd_p);
