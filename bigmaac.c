@@ -35,7 +35,7 @@
     tmp->next->previous=tmp->previous; \
     tmp->previous->next=tmp->next; \
 }
-#define BIGMAAC_EXPECTED(size) (size*2)
+#define BIGMAAC_EXPECTED(size) ((unsigned int)(size*1.25))
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
                   NOT_LOADED=0, 
