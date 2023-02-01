@@ -316,7 +316,7 @@ static node * heap_pop_split(node * const head, const size_t size) {
 
     node * free_node = node_array[0];
     if (free_node->size<size) {
-        return NULL;
+        return NULL; //largest gap is not good enough!
     }
 
     //check left and right child ( avoid further fragmenting largest chunk )
@@ -333,7 +333,7 @@ static node * heap_pop_split(node * const head, const size_t size) {
         free_node=node_array[right_child_idx];
     }
 
-    if (free_node->size==size) {
+    if (free_node->size==size) { //free node is exactly good size wise!
         heap_remove_idx(heap, free_node->heap_idx);
         free_node->in_use=IN_USE;
         verify_memory(head,1);
@@ -727,8 +727,12 @@ void *realloc(void * ptr, size_t size)
             fprintf(stderr,"BigMaac: Cannot find node in BigMaac\n");
             pthread_mutex_unlock(&lock);
             return NULL;
-        }   
-        pthread_mutex_unlock(&lock);
+        }  
+ 
+        if (n->size>=size) {
+            pthread_mutex_unlock(&lock);
+            return ptr;
+        }
 
 #ifdef BIGMAAC_SIGNAL
     kill(getpid(), SIGUSR1);
@@ -738,10 +742,44 @@ void *realloc(void * ptr, size_t size)
                active_mmaps,
                1.0-((float)used_fries)/size_fries,
                1.0-((float)used_bigmaacs)/size_bigmaac); 
+
+    	node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
+	//check if adjacent node is free, knock knock | requires lock?
+	if (n->next!=NULL && n->in_use==FREE && (n->size+n->next->size)>=size) {
+	    // check for equality 
+	    if ((n->size+n->next->size)==size) {
+		//remove the node and swallow it
+		n->size+=n->next->size;
+        	heap_remove_idx(n->heap, n->next->heap_idx);
+        	UNLINK(n->next);
+        	real_free((size_t)n->next);
+        	verify_memory(head,1);
+	    }
+
+	    n->next->size-=(size-n->size);
+	    heapify_down(heap,free_node->heap_idx);
+	    verify_memory(head,1);
+			
+	    //heapify from this node down
+	    *used_node = (node){
+		.size = size,
+		    .ptr = free_node->ptr,
+		    .next = free_node,
+		    .previous = free_node->previous,
+		    .in_use = IN_USE,
+		    .heap_idx = -1
+	    };
+
+	    free_node->size-=size; // need to now heapify this node
+	    free_node->ptr=free_node->ptr+size;
+
+	    free_node->previous->next=used_node;
+	    free_node->previous=used_node;
+
+	}
+        pthread_mutex_unlock(&lock);
+
         //allocated memory is big enough
-        if (n->size>=size) {
-            return ptr;
-        }
 
         //existing chunk is not big enough
         void *p = NULL;
