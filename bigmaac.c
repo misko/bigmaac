@@ -58,6 +58,7 @@ typedef struct node {
     char * ptr;
     size_t size;
     heap * heap;
+    int fd;
 } node;
 
 //heap operations
@@ -352,7 +353,8 @@ static node * heap_pop_split(node * const head, const size_t size) {
             .next = free_node,
             .previous = free_node->previous,
             .in_use = IN_USE,
-            .heap_idx = -1
+            .heap_idx = -1,
+            .fd = -1
     };
 
     free_node->size-=size; // need to now heapify this node
@@ -394,7 +396,8 @@ static node * ll_new(void * const ptr, const size_t size) {
             .next = head+1,
             .previous = NULL,
             .in_use = IN_USE,
-            .heap_idx = -1
+            .heap_idx = -1,
+            .fd = -1
     };
     head[1] = (node){
         .size = size,
@@ -402,7 +405,8 @@ static node * ll_new(void * const ptr, const size_t size) {
             .next = NULL,
             .previous = head,
             .in_use = FREE,
-            .heap_idx = 0
+            .heap_idx = 0,
+            .fd = -1
     };
 
     head->heap = (heap*)real_malloc(sizeof(heap));
@@ -495,13 +499,13 @@ static void bigmaac_init(void)
     }
     active_mmaps++;
 
-    const int ret = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
-    if (ret<0) {
+    const int fd = mmap_tmpfile(base_fries,size_fries); //allocate fries right away
+    if (fd<0) {
         fprintf(stderr,"BigMaac: Failed to initialize library\n");
         load_state=LIBRARY_FAIL;
         pthread_mutex_unlock(&lock);
         return;
-    } 
+    }
 
     end_fries=((char*)base_fries)+size_fries;
 
@@ -557,13 +561,13 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
     }
     active_mmaps++;
 
-    ret = close(fd);//mmap keeps the fd open now
+    /*ret = close(fd);//mmap keeps the fd open now
     if (ret==-1) {
         fprintf(stderr,"BigMaac: close fd failed! %s\n", strerror(errno));
         return -1;
-    }
+    }*/
 
-    return 0;
+    return fd;
 }
 
 static void * create_chunk(size_t size) {
@@ -586,10 +590,11 @@ static void * create_chunk(size_t size) {
     }
 
     if (head==_head_bigmaacs) {
-        int ret = mmap_tmpfile(heap_chunk->ptr,size);
-        if (ret<0) {
+        int fd = mmap_tmpfile(heap_chunk->ptr,size);
+        if (fd<0) {
             return NULL;
         }
+	heap_chunk->fd=fd;
     }
 
     return heap_chunk->ptr;
@@ -619,6 +624,8 @@ static int remove_chunk_with_ptr(void * const ptr, void * const new_ptr, const s
             pthread_mutex_unlock(&lock);
             return 0;
         }
+	close(n->fd);
+	n->fd=-1;
         active_mmaps--;
         used_bigmaacs-=n->size;
     } else {
@@ -730,56 +737,60 @@ void *realloc(void * ptr, size_t size)
         }  
  
         if (n->size>=size) {
-            pthread_mutex_unlock(&lock);
-            return ptr;
-        }
+		pthread_mutex_unlock(&lock);
+		return ptr;
+	}
 
 #ifdef BIGMAAC_SIGNAL
-    kill(getpid(), SIGUSR1);
+	kill(getpid(), SIGUSR1);
 #endif
 	fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
-        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
-               active_mmaps,
-               1.0-((float)used_fries)/size_fries,
-               1.0-((float)used_bigmaacs)/size_bigmaac); 
+	fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
+			active_mmaps,
+			1.0-((float)used_fries)/size_fries,
+			1.0-((float)used_bigmaacs)/size_bigmaac); 
 
-    	node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
+	node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
 	//check if adjacent node is free, knock knock | requires lock?
 	if (n->next!=NULL && n->in_use==FREE && (n->size+n->next->size)>=size) {
-	    // check for equality 
-	    if ((n->size+n->next->size)==size) {
-		//remove the node and swallow it
-		n->size+=n->next->size;
-        	heap_remove_idx(n->heap, n->next->heap_idx);
-        	UNLINK(n->next);
-        	real_free((size_t)n->next);
-        	verify_memory(head,1);
-	    }
+		fprintf(stderr,"REAL REAL REEALLOC!\n");
+		// check for equality 
+		if ((n->size+n->next->size)==size) {
+			//remove the node and swallow it
+			n->size+=n->next->size;
+			heap_remove_idx(n->heap, n->next->heap_idx);
+			UNLINK(n->next);
+			real_free((size_t)n->next);
+			verify_memory(head,1);
+		} else {
+			// move free space from next node to this one
+			n->next->size-=(size-n->size);
+			n->size+=(size-n->size);
+			//fix the free nodes place in the heap
+			heapify_down(n->heap,n->next->heap_idx);
+			verify_memory(head,1);
+		}
+		//change the size of the mmap
 
-	    n->next->size-=(size-n->size);
-	    heapify_down(heap,free_node->heap_idx);
-	    verify_memory(head,1);
-			
-	    //heapify from this node down
-	    *used_node = (node){
-		.size = size,
-		    .ptr = free_node->ptr,
-		    .next = free_node,
-		    .previous = free_node->previous,
-		    .in_use = IN_USE,
-		    .heap_idx = -1
-	    };
-
-	    free_node->size-=size; // need to now heapify this node
-	    free_node->ptr=free_node->ptr+size;
-
-	    free_node->previous->next=used_node;
-	    free_node->previous=used_node;
+		int ret = ftruncate(n->fd, size); //resize the file
+		if (ret!=0) {
+			fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
+			return NULL;
+		}
+		void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);	
+		if (ret_ptr==MAP_FAILED) {
+			fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+					active_mmaps,
+					1.0-((float)used_fries)/size_fries,
+					1.0-((float)used_bigmaacs)/size_bigmaac, 
+					strerror(errno));
+			return NULL;
+		}
 
 	}
-        pthread_mutex_unlock(&lock);
+	pthread_mutex_unlock(&lock);
 
-        //allocated memory is big enough
+	//allocated memory is big enough
 
         //existing chunk is not big enough
         void *p = NULL;
