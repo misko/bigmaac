@@ -19,6 +19,7 @@ Allocate X% more space in VM to use for re-alloc
 Each node needs actual size and used size
 
 */
+#define MAX(a,b) (a > b ? a : b)
 
 #ifdef BIGMAAC_SIGNAL
 #include <signal.h>
@@ -41,7 +42,7 @@ Each node needs actual size and used size
     tmp->next->previous=tmp->previous; \
     tmp->previous->next=tmp->next; \
 }
-#define BIGMAAC_BUFFERED_SIZE(size) ((unsigned int)(size*2.0))
+#define BIGMAAC_BUFFERED_SIZE(size) (MAX(size,(unsigned int)(size*2.0)))
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
     NOT_LOADED=0, 
