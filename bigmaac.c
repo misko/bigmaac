@@ -13,7 +13,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define BIGMAAC_SIGNAL
+#define BIGMAAC_SIGNAL1
 #ifdef BIGMAAC_SIGNAL
 #include <signal.h>
 #endif
@@ -35,7 +35,7 @@
     tmp->next->previous=tmp->previous; \
     tmp->previous->next=tmp->next; \
 }
-#define BIGMAAC_EXPECTED(size) ((unsigned int)(size*1.25))
+#define BIGMAAC_EXPECTED(size) ((unsigned int)(size*1.0))
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
                   NOT_LOADED=0, 
@@ -145,8 +145,8 @@ void log_bm(const char *data, ...){
 }
 
 static inline void verify_memory(node * head, int global) {
-    //print_heap(head->heap);
-    //print_ll(head);
+    print_heap(head->heap);
+    print_ll(head);
     size_t heap_free=0;
     for (int i =0; i<head->heap->used; i++) {
         assert(head->heap->node_array[i]->ptr!=NULL);
@@ -178,7 +178,7 @@ static inline void verify_memory(node * head, int global) {
 
 static void print_ll(node * head) {
     while (head!=NULL) {
-        fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, ptr=%p\n",head,head->next,head->in_use,head->previous,head->size,head->ptr);
+        fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, ptr=%p, heap=%p, heap_idx=%d\n",head,head->next,head->in_use,head->previous,head->size,head->ptr,head->heap,head->heap_idx);
         head=head->next;
     }
 }
@@ -354,6 +354,7 @@ static node * heap_pop_split(node * const head, const size_t size) {
             .previous = free_node->previous,
             .in_use = IN_USE,
             .heap_idx = -1,
+            .heap = heap,
             .fd = -1
     };
 
@@ -413,7 +414,8 @@ static node * ll_new(void * const ptr, const size_t size) {
     if (head->heap==NULL) {
         fprintf(stderr,"BigMalloc heap failed\n");
         return NULL;
-    }     
+    }    
+    head[1].heap=head->heap; 
     head->heap->node_array=(node**)real_malloc(sizeof(node*)*1);
     if (head->heap->node_array==NULL) {
         fprintf(stderr,"BigMalloc heap failed 2\n");
@@ -713,6 +715,7 @@ void *reallocarray(void * ptr, size_t size,size_t count) {
 
 void *realloc(void * ptr, size_t size)
 {
+     fprintf(stderr,"RALLOC\n");
     if(load_state==NOT_LOADED && real_malloc==NULL) {
         bigmaac_init();
     }
@@ -735,62 +738,77 @@ void *realloc(void * ptr, size_t size)
             pthread_mutex_unlock(&lock);
             return NULL;
         }  
- 
+
         if (n->size>=size) {
-		pthread_mutex_unlock(&lock);
-		return ptr;
-	}
+            fprintf(stderr,"ALREADY BIG ENGOUHG\n");
+            pthread_mutex_unlock(&lock);
+            return ptr;
+        }
 
 #ifdef BIGMAAC_SIGNAL
-	kill(getpid(), SIGUSR1);
+        kill(getpid(), SIGUSR1);
 #endif
-	fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
-	fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
-			active_mmaps,
-			1.0-((float)used_fries)/size_fries,
-			1.0-((float)used_bigmaacs)/size_bigmaac); 
+        fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
+        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
+                active_mmaps,
+                1.0-((float)used_fries)/size_fries,
+                1.0-((float)used_bigmaacs)/size_bigmaac); 
 
-	node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
-	//check if adjacent node is free, knock knock | requires lock?
-	if (n->next!=NULL && n->in_use==FREE && (n->size+n->next->size)>=size) {
-		fprintf(stderr,"REAL REAL REEALLOC!\n");
-		// check for equality 
-		if ((n->size+n->next->size)==size) {
-			//remove the node and swallow it
-			n->size+=n->next->size;
-			heap_remove_idx(n->heap, n->next->heap_idx);
-			UNLINK(n->next);
-			real_free((size_t)n->next);
-			verify_memory(head,1);
-		} else {
-			// move free space from next node to this one
-			n->next->size-=(size-n->size);
-			n->size+=(size-n->size);
-			//fix the free nodes place in the heap
-			heapify_down(n->heap,n->next->heap_idx);
-			verify_memory(head,1);
-		}
-		//change the size of the mmap
+        node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
+        if (head==_head_bigmaacs) {
+            size=SIZE_TO_MULTIPLE(size,page_size);
+        } else {
+            size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
+        }
+        //check if adjacent node is free, knock knock | requires lock?
+        fprintf(stderr,"%p FREE%d %d %d %d\n",n,FREE,n->next!=NULL,n->next->in_use==FREE ,(n->size+n->next->size)>=size);
+        if (n->next!=NULL && n->next->in_use==FREE && (n->size+n->next->size)>=size) {
+            fprintf(stderr,"REAL REAL REEALLOC!\n");
+            // check for equality 
+            if ((n->size+n->next->size)==size) {
+            fprintf(stderr,"REAL REAL REEALLOC1!\n");
+                //remove the node and swallow it
+                n->size+=n->next->size;
+                heap_remove_idx(n->heap, n->next->heap_idx);
+                UNLINK(n->next);
+                real_free((size_t)n->next);
+                verify_memory(head,1);
+            } else {
+                // move free space from next node to this one
+                verify_memory(head,1);
+                used_bigmaacs+=(size-n->size);
+                n->next->size-=(size-n->size);
+                n->size+=(size-n->size);
+                //fix the free nodes place in the heap
+                heapify_down(n->heap,n->next->heap_idx);
+                verify_memory(head,1);
+            }
+            //change the size of the mmapp
 
-		int ret = ftruncate(n->fd, size); //resize the file
-		if (ret!=0) {
-			fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
-			return NULL;
-		}
-		void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);	
-		if (ret_ptr==MAP_FAILED) {
-			fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
-					active_mmaps,
-					1.0-((float)used_fries)/size_fries,
-					1.0-((float)used_bigmaacs)/size_bigmaac, 
-					strerror(errno));
-			return NULL;
-		}
+            fprintf(stderr,"REAL REAL REEALLOC!\n");
+            int ret = ftruncate(n->fd, size); //resize the file
+            if (ret!=0) {
+                fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
+                return NULL;
+            }
+            fprintf(stderr,"REAL REAL REEALLOC3!\n");
+            void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);	
+            if (ret_ptr==MAP_FAILED) {
+                fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+                        active_mmaps,
+                        1.0-((float)used_fries)/size_fries,
+                        1.0-((float)used_bigmaacs)/size_bigmaac, 
+                        strerror(errno));
+                return NULL;
+            }
+            fprintf(stderr,"REAL REAL REEALLOC!\n");
+            pthread_mutex_unlock(&lock);
+               return ptr;
+            
+        }
+        pthread_mutex_unlock(&lock);
 
-	}
-	pthread_mutex_unlock(&lock);
-
-	//allocated memory is big enough
+        //allocated memory is big enough
 
         //existing chunk is not big enough
         void *p = NULL;
