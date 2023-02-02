@@ -13,7 +13,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define BIGMAAC_SIGNAL1
+#define BIGMAAC_SIGNAL
 #ifdef BIGMAAC_SIGNAL
 #include <signal.h>
 #endif
@@ -662,7 +662,6 @@ void *malloc(size_t size)
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
-        fprintf(stderr,"BigMaac: Malloc %lu\n",size);
         fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
                 active_mmaps,
                 1.0-((float)used_fries)/size_fries,
