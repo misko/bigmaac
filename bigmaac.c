@@ -536,6 +536,8 @@ static void bigmaac_init(void)
 // BigMaac helper functions 
 
 static int resize_node(node * n, const size_t requested_size) {
+	assert(n->size>=requested_size);
+	n->requested_size=requested_size;
 	int ret = ftruncate(n->fd, requested_size); //resize the file
 	if (ret!=0) {
 		fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
@@ -784,17 +786,8 @@ void *realloc(void * ptr, size_t size)
             size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
         }
 
-        if (n->size>=size) {
-            fprintf(stderr,"Realloc handle #1\n");
-	    int ret = resize_node(n,size);
-	    if (ret!=0) {
-		fprintf(stderr,"BigMaac: Failed to resize mmap\n");
-            }
-            pthread_mutex_unlock(&lock);
-            return ptr;
-        }
 
-        if (n->next!=NULL && n->next->in_use==FREE && (n->size+n->next->size)>=size) {
+        if (n->next!=NULL && n->next->in_use==FREE && (n->size<size) && (n->size+n->next->size)>=size) {
             fprintf(stderr,"Realloc handle #2\n");
             // check for equality 
             if ((n->size+n->next->size)==size) {
@@ -816,17 +809,16 @@ void *realloc(void * ptr, size_t size)
                 heapify_down(n->heap,n->next->heap_idx);
                 verify_memory(head,1);
             }
+        }
 
-            //change the size of the mmapp
+        if (n->size>=size) {
+            fprintf(stderr,"Realloc handle #1\n");
 	    int ret = resize_node(n,size);
 	    if (ret!=0) {
 		fprintf(stderr,"BigMaac: Failed to resize mmap\n");
             }
-
-            fprintf(stderr,"REAL REAL REEALLOC!\n");
             pthread_mutex_unlock(&lock);
             return ptr;
-
         }
         pthread_mutex_unlock(&lock);
 
