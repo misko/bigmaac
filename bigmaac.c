@@ -185,6 +185,7 @@ static inline void verify_memory(node * head, int global) {
 }
 
 static void print_ll(node * head) {
+    fprintf(stderr,"PRINT_LL()\n");
     while (head!=NULL) {
         fprintf(stderr,"%p n=%p, u=%d, p=%p, size=%ld, ptr=%p, heap=%p, heap_idx=%d\n",head,head->next,head->in_use,head->previous,head->size,head->ptr,head->heap,head->heap_idx);
         head=head->next;
@@ -192,6 +193,7 @@ static void print_ll(node * head) {
 }
 
 static void print_heap(heap* heap) {
+    fprintf(stderr,"PRINT_HEAP()\n");
     for (int i =0; i<heap->used; i++) {
         fprintf(stderr,"parent %d node %d , ptr=%p size=%ld\n",
                 (i-1)/2, i,
