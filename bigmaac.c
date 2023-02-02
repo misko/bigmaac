@@ -795,8 +795,10 @@ void *realloc(void * ptr, size_t size)
         }
 
         if (n->next!=NULL && n->next->in_use==FREE && (n->size+n->next->size)>=size) {
+            fprintf(stderr,"Realloc handle #2\n");
             // check for equality 
             if ((n->size+n->next->size)==size) {
+            	fprintf(stderr,"Realloc handle #2a\n");
                 //remove the node and swallow it
                 n->size+=n->next->size;
                 heap_remove_idx(n->heap, n->next->heap_idx);
@@ -804,6 +806,7 @@ void *realloc(void * ptr, size_t size)
                 real_free((size_t)n->next);
                 verify_memory(head,1);
             } else {
+            	fprintf(stderr,"Realloc handle #2b\n");
                 // move free space from next node to this one
                 verify_memory(head,1);
                 used_bigmaacs+=(size-n->size);
