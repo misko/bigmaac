@@ -13,7 +13,6 @@
 #include <string.h>
 #include <assert.h>
 
-#define BIGMAAC_SIGNAL
 #ifdef BIGMAAC_SIGNAL
 #include <signal.h>
 #endif
