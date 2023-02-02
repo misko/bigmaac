@@ -13,6 +13,13 @@
 #include <string.h>
 #include <assert.h>
 
+/*
+
+Allocate X% more space in VM to use for re-alloc 
+Each node needs actual size and used size
+
+*/
+
 #ifdef BIGMAAC_SIGNAL
 #include <signal.h>
 #endif
@@ -34,7 +41,7 @@
     tmp->next->previous=tmp->previous; \
     tmp->previous->next=tmp->next; \
 }
-#define BIGMAAC_EXPECTED(size) ((unsigned int)(size*1.0))
+#define BIGMAAC_BUFFERED_SIZE(size) ((unsigned int)(size*2.0))
 enum memory_use { IN_USE=0, FREE=1 };
 enum load_status { LIBRARY_FAIL=-1,
     NOT_LOADED=0, 
@@ -55,7 +62,8 @@ typedef struct node {
     enum memory_use in_use;
     int heap_idx;
     char * ptr;
-    size_t size;
+    size_t size; //The actual size of mmap 
+    size_t requested_size; //The user requested this much
     heap * heap;
     int fd;
 } node;
@@ -305,7 +313,8 @@ static int heap_free_node(node * const head, node * const n) {
     return 0;
 }
 
-static node * heap_pop_split(node * const head, const size_t size) {
+static node * heap_pop_split(node * const head, const size_t requested_size) {
+    size_t size = BIGMAAC_BUFFERED_SIZE(requested_size); // the  actual size we are going to alloc
     verify_memory(head,0);
     if (head->heap->used==0) {
         return NULL;
@@ -336,6 +345,7 @@ static node * heap_pop_split(node * const head, const size_t size) {
     if (free_node->size==size) { //free node is exactly good size wise!
         heap_remove_idx(heap, free_node->heap_idx);
         free_node->in_use=IN_USE;
+	free_node->requested_size=requested_size;
         verify_memory(head,1);
         return free_node;
     }
@@ -348,6 +358,7 @@ static node * heap_pop_split(node * const head, const size_t size) {
     //heapify from this node down
     *used_node = (node){
         .size = size,
+        .requested_size = requested_size,
             .ptr = free_node->ptr,
             .next = free_node,
             .previous = free_node->previous,
@@ -591,7 +602,7 @@ static void * create_chunk(size_t size) {
     }
 
     if (head==_head_bigmaacs) {
-        int fd = mmap_tmpfile(heap_chunk->ptr,size);
+        int fd = mmap_tmpfile(heap_chunk->ptr,heap_chunk->requested_size);
         if (fd<0) {
             return NULL;
         }
@@ -661,11 +672,11 @@ void *malloc(size_t size)
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
-        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
+        fprintf(stderr,"BigMaac: malloc mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
                 active_mmaps,
                 1.0-((float)used_fries)/size_fries,
                 1.0-((float)used_bigmaacs)/size_bigmaac); 
-        void * p=create_chunk(BIGMAAC_EXPECTED(size));
+        void * p=create_chunk(size);
         if (p==NULL) {
             OOM(); return NULL;
         }
@@ -806,7 +817,7 @@ void *realloc(void * ptr, size_t size)
         //existing chunk is not big enough
         void *p = NULL;
         if (size>min_size_fry) {
-            p=create_chunk(BIGMAAC_EXPECTED(size));
+            p=create_chunk(size);
             if (p==NULL) {
                 OOM(); //set errno
             }
@@ -836,7 +847,7 @@ void *realloc(void * ptr, size_t size)
             return NULL; //errno already set
         }
 
-        void * p=create_chunk(BIGMAAC_EXPECTED(size));
+        void * p=create_chunk(size);
         if (p!=NULL) {
             memcpy(p,mallocd_p,size);
             real_free((size_t)mallocd_p);
