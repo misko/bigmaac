@@ -125,12 +125,21 @@ static enum load_status load_state=NOT_LOADED;
 //debug functions
 static inline void verify_memory(node * head,int global);
 static inline void log_bm(const char *data, ...);
+static void print_stats() {
+        fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+                active_mmaps,
+                1.0-((float)used_fries)/size_fries,
+                1.0-((float)used_bigmaacs)/size_bigmaac, 
+                strerror(errno));
+
+}
 #ifdef DEBUG
 static void print_ll(node * head);
 static void print_heap(heap* heap);
 static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 static FILE * f;
 static int this_pid = 0;
+
 
 void log_bm(const char *data, ...){
     pthread_mutex_lock(&log_lock);
@@ -318,6 +327,8 @@ static int heap_free_node(node * const head, node * const n) {
 
 static node * heap_pop_split(node * const head, const size_t requested_size) {
     size_t size = BIGMAAC_BUFFERED_SIZE(requested_size); // the  actual size we are going to alloc
+
+
     verify_memory(head,0);
     if (head->heap->used==0) {
         return NULL;
@@ -378,6 +389,16 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
     free_node->previous=used_node;
 
     heapify_down(heap,free_node->heap_idx);
+
+    //update used metrics
+    if (head==_head_bigmaacs) {
+        size=SIZE_TO_MULTIPLE(size,page_size);
+        used_bigmaacs+=size;
+    } else {
+        size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
+        used_fries+=size;
+    }
+
     verify_memory(head,1);
 
     return used_node;
@@ -547,11 +568,7 @@ static int resize_node(node * n, const size_t requested_size) {
 	}
 	void * ret_ptr = mmap(n->ptr, requested_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);    
 	if (ret_ptr==MAP_FAILED) {
-		fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
-				active_mmaps,
-				1.0-((float)used_fries)/size_fries,
-				1.0-((float)used_bigmaacs)/size_bigmaac, 
-				strerror(errno));
+		print_stats();
 		return -1;
 	}
 	return 0;
@@ -588,11 +605,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
     }
     void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);    
     if (ret_ptr==MAP_FAILED) {
-        fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
-                active_mmaps,
-                1.0-((float)used_fries)/size_fries,
-                1.0-((float)used_bigmaacs)/size_bigmaac, 
-                strerror(errno));
+	print_stats();
         return -1;
     }
     active_mmaps++;
@@ -610,13 +623,6 @@ static void * create_chunk(size_t size) {
     node * const head = size>min_size_bigmaac ? _head_bigmaacs : _head_fries; //TODO lock per head?
     pthread_mutex_lock(&lock); //keep lock here so that verify is consistent
                    //page align the size requested
-    if (head==_head_bigmaacs) {
-        size=SIZE_TO_MULTIPLE(size,page_size);
-        used_bigmaacs+=size;
-    } else {
-        size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
-        used_fries+=size;
-    }
 
     node * heap_chunk=heap_pop_split(head, size);
     pthread_mutex_unlock(&lock);
@@ -696,10 +702,7 @@ void *malloc(size_t size)
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
-        fprintf(stderr,"BigMaac: malloc mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
-                active_mmaps,
-                1.0-((float)used_fries)/size_fries,
-                1.0-((float)used_bigmaacs)/size_bigmaac); 
+	print_stats();
         void * p=create_chunk(size);
         if (p==NULL) {
             OOM(); return NULL;
@@ -775,10 +778,7 @@ void *realloc(void * ptr, size_t size)
         kill(getpid(), SIGUSR1);
 #endif
         fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
-        fprintf(stderr,"BigMaac: mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count\n",
-                active_mmaps,
-                1.0-((float)used_fries)/size_fries,
-                1.0-((float)used_bigmaacs)/size_bigmaac); 
+	print_stats();
 
 
         node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
