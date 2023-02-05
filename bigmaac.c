@@ -15,10 +15,10 @@
 
 /*
 
-Allocate X% more space in VM to use for re-alloc 
-Each node needs actual size and used size
+   Allocate X% more space in VM to use for re-alloc 
+   Each node needs actual size and used size
 
-*/
+ */
 #define MAX(a,b) (a > b ? a : b)
 
 #ifdef BIGMAAC_SIGNAL
@@ -126,11 +126,11 @@ static enum load_status load_state=NOT_LOADED;
 static inline void verify_memory(node * head,int global);
 static inline void log_bm(const char *data, ...);
 static void print_stats() {
-        fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
-                active_mmaps,
-                1.0-((float)used_fries)/size_fries,
-                1.0-((float)used_bigmaacs)/size_bigmaac, 
-                strerror(errno));
+    fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+            active_mmaps,
+            1.0-((float)used_fries)/size_fries,
+            1.0-((float)used_bigmaacs)/size_bigmaac, 
+            strerror(errno));
 
 }
 #ifdef DEBUG
@@ -228,12 +228,17 @@ static void heap_remove_idx(heap * const heap, const int idx) {
     } 
 
     //take the last one and place it here
-    heap->node_array[idx]->heap_idx=-1; // node is out of the heap
-    heap->node_array[heap->used-1]->heap_idx=idx; //node has moved up in the heap
-    heap->node_array[idx]=heap->node_array[heap->used-1];
-    heap->used--; //the heap is now smaller
+    if (idx==heap->used-1) {
+        //this is the last node in the array, we can just drop it
+        heap->used--; //the heap is now smaller
+    } else { 
+        heap->node_array[idx]->heap_idx=-1; // node is out of the heap
+        heap->node_array[heap->used-1]->heap_idx=idx; //node has moved up in the heap
+        heap->node_array[idx]=heap->node_array[heap->used-1];
+        heap->used--; //the heap is now smaller
 
-    heapify_down(heap,idx);
+        heapify_down(heap,idx);
+    }
 }
 
 static void heapify_up(heap * const heap, const int idx) {
@@ -359,7 +364,7 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
     if (free_node->size==size) { //free node is exactly good size wise!
         heap_remove_idx(heap, free_node->heap_idx);
         free_node->in_use=IN_USE;
-	free_node->requested_size=requested_size;
+        free_node->requested_size=requested_size;
         verify_memory(head,1);
         return free_node;
     }
@@ -372,7 +377,7 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
     //heapify from this node down
     *used_node = (node){
         .size = size,
-        .requested_size = requested_size,
+            .requested_size = requested_size,
             .ptr = free_node->ptr,
             .next = free_node,
             .previous = free_node->previous,
@@ -559,19 +564,19 @@ static void bigmaac_init(void)
 // BigMaac helper functions 
 
 static int resize_node(node * n, const size_t requested_size) {
-	assert(n->size>=requested_size);
-	n->requested_size=requested_size;
-	int ret = ftruncate(n->fd, requested_size); //resize the file
-	if (ret!=0) {
-		fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
-		return -1;
-	}
-	void * ret_ptr = mmap(n->ptr, requested_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);    
-	if (ret_ptr==MAP_FAILED) {
-		print_stats();
-		return -1;
-	}
-	return 0;
+    assert(n->size>=requested_size);
+    n->requested_size=requested_size;
+    int ret = ftruncate(n->fd, requested_size); //resize the file
+    if (ret!=0) {
+        fprintf(stderr,"BigMaac: ftruncate failed! %s\n", strerror(errno));
+        return -1;
+    }
+    void * ret_ptr = mmap(n->ptr, requested_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, n->fd, 0);    
+    if (ret_ptr==MAP_FAILED) {
+        print_stats();
+        return -1;
+    }
+    return 0;
 
 }
 
@@ -605,7 +610,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
     }
     void * ret_ptr = mmap(ptr, size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);    
     if (ret_ptr==MAP_FAILED) {
-	print_stats();
+        print_stats();
         return -1;
     }
     active_mmaps++;
@@ -702,7 +707,7 @@ void *malloc(size_t size)
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
-	print_stats();
+        print_stats();
         void * p=create_chunk(size);
         if (p==NULL) {
             OOM(); return NULL;
@@ -778,7 +783,7 @@ void *realloc(void * ptr, size_t size)
         kill(getpid(), SIGUSR1);
 #endif
         fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
-	print_stats();
+        print_stats();
 
 
         node * head = ptr<base_bigmaac ? _head_fries : _head_bigmaacs;
@@ -793,7 +798,7 @@ void *realloc(void * ptr, size_t size)
             fprintf(stderr,"Realloc handle #2\n");
             // check for equality 
             if ((n->size+n->next->size)==size) {
-            	fprintf(stderr,"Realloc handle #2a\n");
+                fprintf(stderr,"Realloc handle #2a\n");
                 //remove the node and swallow it
                 n->size+=n->next->size;
                 heap_remove_idx(n->heap, n->next->heap_idx);
@@ -801,7 +806,7 @@ void *realloc(void * ptr, size_t size)
                 real_free((size_t)n->next);
                 verify_memory(head,1);
             } else {
-            	fprintf(stderr,"Realloc handle #2b\n");
+                fprintf(stderr,"Realloc handle #2b\n");
                 // move free space from next node to this one
                 verify_memory(head,1);
                 used_bigmaacs+=(size-n->size);
@@ -815,9 +820,9 @@ void *realloc(void * ptr, size_t size)
 
         if (n->size>=size) {
             fprintf(stderr,"Realloc handle #1\n");
-	    int ret = resize_node(n,size);
-	    if (ret!=0) {
-		fprintf(stderr,"BigMaac: Failed to resize mmap\n");
+            int ret = resize_node(n,size);
+            if (ret!=0) {
+                fprintf(stderr,"BigMaac: Failed to resize mmap\n");
             }
             pthread_mutex_unlock(&lock);
             return ptr;
