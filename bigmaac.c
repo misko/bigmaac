@@ -707,6 +707,7 @@ void *malloc(size_t size)
     }
 
     if (size>min_size_fry) {
+    fprintf(stderr,"MALLOC %lu\n",size);
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
@@ -737,6 +738,7 @@ void *calloc(size_t count, size_t size)
 
     //library is loaded and count/size are reasonable
     if (size>min_size_fry) {
+    fprintf(stderr,"CALLOC\n");
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
@@ -770,9 +772,9 @@ void *realloc(void * ptr, size_t size)
     if (ptr==NULL || size==0) {
         return malloc(size);
     }
-
     //currently managed by BigMaac
     if (ptr>=base_fries && ptr<end_bigmaac) {
+    	fprintf(stderr,"REALLOC %lu\n",size);
         //check if already allocated is big enough
         pthread_mutex_lock(&lock);
         node * n = heap_find_node(ptr);
