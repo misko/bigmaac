@@ -169,8 +169,8 @@ static inline void verify_memory(node * head, int global) {
         assert(head->heap->node_array[i]->ptr!=NULL);
         heap_free+=head->heap->node_array[i]->size;
     }
-    size_t t=0;
-    size_t ll_free=0;
+    size_t t=0; //this is how much space is in the linked list
+    size_t ll_free=0; //this is how much free space is in the linked list
     node * prev=NULL;
     node *c =head;
     while(c!=NULL) {
@@ -334,13 +334,22 @@ static int heap_free_node(node * const head, node * const n) {
 }
 
 static node * heap_pop_split(node * const head, const size_t requested_size) {
-    size_t size = BIGMAAC_BUFFERED_SIZE(requested_size); // the  actual size we are going to alloc
-
 
     verify_memory(head,0);
     if (head->heap->used==0) {
         return NULL;
     }
+
+    size_t size = BIGMAAC_BUFFERED_SIZE(requested_size); // the  actual size we are going to alloc
+    //update used metrics
+    if (head==_head_bigmaacs) {
+        size=SIZE_TO_MULTIPLE(size,page_size);
+        used_bigmaacs+=size;
+    } else {
+        size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
+        used_fries+=size;
+    }
+    fprintf(stderr,"requested size %lu , size to allocate %lu\n",requested_size,size);
 
     heap * heap = head->heap;
     node ** node_array = heap->node_array;
@@ -398,14 +407,6 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
 
     heapify_down(heap,free_node->heap_idx);
 
-    //update used metrics
-    if (head==_head_bigmaacs) {
-        size=SIZE_TO_MULTIPLE(size,page_size);
-        used_bigmaacs+=size;
-    } else {
-        size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
-        used_fries+=size;
-    }
 
     verify_memory(head,1);
 
