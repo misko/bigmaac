@@ -230,11 +230,14 @@ static void heap_remove_idx(heap * const heap, const int idx) {
     //take the last one and place it here
     if (idx==heap->used-1) {
         //this is the last node in the array, we can just drop it
+        heap->node_array[idx]->heap_idx=-1; // node is out of the heap
         heap->used--; //the heap is now smaller
     } else { 
         heap->node_array[idx]->heap_idx=-1; // node is out of the heap
+
         heap->node_array[heap->used-1]->heap_idx=idx; //node has moved up in the heap
         heap->node_array[idx]=heap->node_array[heap->used-1];
+
         heap->used--; //the heap is now smaller
 
         heapify_down(heap,idx);
