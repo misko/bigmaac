@@ -818,7 +818,10 @@ void *realloc(void * ptr, size_t size)
                 // move free space from next node to this one
                 verify_memory(head,1);
                 used_bigmaacs+=(size-n->size);
+		//update the next node
                 n->next->size-=(size-n->size);
+		n->next->ptr=((char*)n->next->ptr)+(size-n->size);
+		//update current node
                 n->size+=(size-n->size);
                 //fix the free nodes place in the heap
                 heapify_down(n->heap,n->next->heap_idx);
