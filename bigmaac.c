@@ -777,7 +777,7 @@ void *realloc(void * ptr, size_t size)
     }
     //currently managed by BigMaac
     if (ptr>=base_fries && ptr<end_bigmaac) {
-    	fprintf(stderr,"REALLOC %lu\n",size);
+    	fprintf(stderr,"REALLOC %lu %ptr\n",size,ptr);
         //check if already allocated is big enough
         pthread_mutex_lock(&lock);
         node * n = heap_find_node(ptr);
@@ -895,6 +895,7 @@ void free(void* ptr) {
         real_free((size_t)ptr);
         return;
     }
+    fprintf(stderr,"FREE %p\n",ptr);
     //ptr is managed by BigMaac and library is fully loaded
     int chunks_removed=remove_chunk_with_ptr(ptr,NULL,0); //Check if this pointer is>> address space reserved fr mmap 
     if (chunks_removed==0) {
@@ -909,7 +910,6 @@ pid_t fork() {
     }
 
     fprintf(stderr,"FORK!\n");
-    assert(1==0);
     pid_t r = real_fork();
     return r;
 }
