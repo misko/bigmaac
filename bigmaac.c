@@ -91,6 +91,7 @@ static void* create_chunk(const size_t size);
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
+static pid_t (*real_fork)()=NULL;
 static void* (*real_malloc)(size_t)=NULL;
 static void* (*real_calloc)(size_t,size_t)=NULL;
 static void* (*real_free)(size_t)=NULL;
@@ -486,12 +487,13 @@ static void bigmaac_init(void)
     }
     fprintf(stderr,"Loading Bigmaac Heap X2! PID:%d PPID:%d\n",getpid(),getppid());
     load_state=LOADING_MEM_FUNCS;
+    real_fork = dlsym(RTLD_NEXT, "fork");
     real_malloc = dlsym(RTLD_NEXT, "malloc");
     real_free = dlsym(RTLD_NEXT, "free");
     real_calloc = dlsym(RTLD_NEXT, "calloc");
     real_realloc = dlsym(RTLD_NEXT, "realloc");
     real_reallocarray = dlsym(RTLD_NEXT, "reallocarray");
-    if (!real_malloc || !real_free || !real_calloc || !real_realloc || !real_reallocarray) {
+    if (!real_malloc || !real_free || !real_calloc || !real_realloc || !real_reallocarray || !real_fork) {
         fprintf(stderr, "Error in `dlsym`: %s\n", dlerror());
     }
     load_state=LOADING_LIBRARY;
@@ -899,6 +901,17 @@ void free(void* ptr) {
         fprintf(stderr,"BigMaac: Free was called on pointer that was not alloc'd %p\n",ptr);
         return;
     }
+}
+
+pid_t fork() {
+    if(load_state==NOT_LOADED && real_malloc==NULL) {
+        bigmaac_init();
+    }
+
+    fprintf(stderr,"FORK!\n");
+    assert(1==0);
+    pid_t r = real_fork();
+    return r;
 }
 
 #ifdef MAIN
