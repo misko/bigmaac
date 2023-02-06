@@ -126,7 +126,7 @@ static enum load_status load_state=NOT_LOADED;
 static inline void verify_memory(node * head,int global);
 static inline void log_bm(const char *data, ...);
 static void print_stats() {
-    fprintf(stderr,"BigMaac: mmap failed! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+    fprintf(stderr,"BigMaac: stats! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
             active_mmaps,
             1.0-((float)used_fries)/size_fries,
             1.0-((float)used_bigmaacs)/size_bigmaac, 
