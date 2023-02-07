@@ -342,7 +342,7 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
     }
 
     size_t size = BIGMAAC_BUFFERED_SIZE(requested_size); // the  actual size we are going to alloc
-    //update used metrics
+                                 //update used metrics
     if (head==_head_bigmaacs) {
         size=SIZE_TO_MULTIPLE(size,page_size);
         used_bigmaacs+=size;
@@ -350,7 +350,7 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
         size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
         used_fries+=size;
     }
-    fprintf(stderr,"requested size %lu , size to allocate %lu\n",requested_size,size);
+    fprintf(stderr,"Heap pop split requested size %lu , size to allocate %lu\n",requested_size,size);
 
     heap * heap = head->heap;
     node ** node_array = heap->node_array;
@@ -485,7 +485,7 @@ static void bigmaac_init(void)
         fprintf(stderr,"Already init %d\n",load_state);
         return;
     }
-    fprintf(stderr,"Loading Bigmaac Heap X2! PID:%d PPID:%d\n",getpid(),getppid());
+    fprintf(stderr,"Loading Bigmaac Heap! PID:%d PPID:%d\n",getpid(),getppid());
     load_state=LOADING_MEM_FUNCS;
     real_fork = dlsym(RTLD_NEXT, "fork");
     real_malloc = dlsym(RTLD_NEXT, "malloc");
@@ -593,7 +593,7 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
         return -1;
     }
     strcpy(filename,template);
-    fprintf(stderr,"BIGMAAC: make file %0.2f MB\n",((double)size)/(1024.0*1024.0));
+    fprintf(stderr,"Bigmaac: make tmp file %0.2f MB\n",((double)size)/(1024.0*1024.0));
     const int fd=mkstemp(filename);
     if (fd<0) {
         fprintf(stderr,"Bigmaac: Failed to make temp file %s\n", strerror(errno));
@@ -620,12 +620,6 @@ static int mmap_tmpfile(void * const ptr, const size_t size) {
         return -1;
     }
     active_mmaps++;
-
-    /*ret = close(fd);//mmap keeps the fd open now
-      if (ret==-1) {
-      fprintf(stderr,"BigMaac: close fd failed! %s\n", strerror(errno));
-      return -1;
-      }*/
 
     return fd;
 }
@@ -710,7 +704,7 @@ void *malloc(size_t size)
     }
 
     if (size>min_size_fry) {
-    fprintf(stderr,"MALLOC %lu\n",size);
+        fprintf(stderr,"Bigmaac: malloc() %luMB\n",size/(1024*1024));
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
@@ -741,7 +735,7 @@ void *calloc(size_t count, size_t size)
 
     //library is loaded and count/size are reasonable
     if (size>min_size_fry) {
-    fprintf(stderr,"CALLOC\n");
+        fprintf(stderr,"Bigmaac: calloc() %luMB\n",size/(1024*1024));
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
@@ -777,7 +771,7 @@ void *realloc(void * ptr, size_t size)
     }
     //currently managed by BigMaac
     if (ptr>=base_fries && ptr<end_bigmaac) {
-    	fprintf(stderr,"REALLOC %lu %ptr\n",size,ptr);
+        fprintf(stderr,"Bigmaac: realloc() %luMB\n",size/(1024*1024));
         //check if already allocated is big enough
         pthread_mutex_lock(&lock);
         node * n = heap_find_node(ptr);
@@ -790,7 +784,7 @@ void *realloc(void * ptr, size_t size)
 #ifdef BIGMAAC_SIGNAL
         kill(getpid(), SIGUSR1);
 #endif
-        fprintf(stderr,"BigMaac: Realloc current %lu vs new %lu\n",n->size,size);
+        fprintf(stderr,"BigMaac: Realloc current %luMB vs new %luMB\n",n->size/(1024*1024),size/(1024*1024));
         print_stats();
 
 
@@ -818,10 +812,10 @@ void *realloc(void * ptr, size_t size)
                 // move free space from next node to this one
                 verify_memory(head,1);
                 used_bigmaacs+=(size-n->size);
-		//update the next node
+                //update the next node
                 n->next->size-=(size-n->size);
-		n->next->ptr=((char*)n->next->ptr)+(size-n->size);
-		//update current node
+                n->next->ptr=((char*)n->next->ptr)+(size-n->size);
+                //update current node
                 n->size+=(size-n->size);
                 //fix the free nodes place in the heap
                 heapify_down(n->heap,n->next->heap_idx);
