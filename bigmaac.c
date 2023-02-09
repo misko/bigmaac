@@ -98,7 +98,7 @@ static void* end_fries=0x0;
 static void* end_bigmaac=0x0;
 
 static size_t size_fries=DEFAULT_MAX_FRIES;
-static size_t size_bigmaac=DEFAULT_MAX_FRIES;
+static size_t size_bigmaac=DEFAULT_MAX_BIGMAAC;
 static char * template=DEFAULT_TEMPLATE;
 static size_t fry_size_multiple=DEFAULT_FRY_SIZE_MULTIPLE;
 
