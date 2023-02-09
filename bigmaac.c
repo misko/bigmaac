@@ -119,6 +119,7 @@ static size_t fry_size_multiple=DEFAULT_FRY_SIZE_MULTIPLE;
 
 static size_t used_fries=0;
 static size_t used_bigmaacs=0;
+static size_t requested_bigmaacs=0;
 static size_t page_size = 0;    
 
 static enum load_status load_state=NOT_LOADED;
@@ -127,10 +128,11 @@ static enum load_status load_state=NOT_LOADED;
 static inline void verify_memory(node * head,int global);
 static inline void log_bm(const char *data, ...);
 static void print_stats() {
-    fprintf(stderr,"BigMaac: stats! mmap() [ active mmaps %d , bigmaac capacity free: %0.2f , fries capacity free: %0.2f, check /proc/sys/vm/max_map_count : %s\n",
+    fprintf(stderr,"BigMaac: stats! mmap() [ active mmaps %d , fires (free: %0.2f) , bigmaac (free: %0.2f, requested: %0.2f) check /proc/sys/vm/max_map_count : %s\n",
             active_mmaps,
             1.0-((float)used_fries)/size_fries,
             1.0-((float)used_bigmaacs)/size_bigmaac, 
+            1.0-((float)requested_bigmaacs)/size_bigmaac, 
             strerror(errno));
 
 }
@@ -346,6 +348,7 @@ static node * heap_pop_split(node * const head, const size_t requested_size) {
     if (head==_head_bigmaacs) {
         size=SIZE_TO_MULTIPLE(size,page_size);
         used_bigmaacs+=size;
+	requested_bigmaacs+=requested_size;
     } else {
         size=SIZE_TO_MULTIPLE(size,fry_size_multiple);
         used_fries+=size;
@@ -675,6 +678,7 @@ static int remove_chunk_with_ptr(void * const ptr, void * const new_ptr, const s
         n->fd=-1;
         active_mmaps--;
         used_bigmaacs-=n->size;
+	requested_bigmaacs-=n->requested_size;	
     } else {
         used_fries-=n->size;
     }
@@ -796,9 +800,10 @@ void *realloc(void * ptr, size_t size)
         }
 
 
+	//if the current node cannot satisfy demand, check if stealing from next node can help
         if (n->next!=NULL && n->next->in_use==FREE && (n->size<size) && (n->size+n->next->size)>=size) {
             fprintf(stderr,"Realloc handle #2\n");
-            // check for equality 
+            // fully consuming the next node is what we need to do 
             if ((n->size+n->next->size)==size) {
                 fprintf(stderr,"Realloc handle #2a\n");
                 //remove the node and swallow it
@@ -806,12 +811,11 @@ void *realloc(void * ptr, size_t size)
                 heap_remove_idx(n->heap, n->next->heap_idx);
                 UNLINK(n->next);
                 real_free((size_t)n->next);
-                verify_memory(head,1);
             } else {
+		//shave only a bit off the neighbor
                 fprintf(stderr,"Realloc handle #2b\n");
                 // move free space from next node to this one
                 verify_memory(head,1);
-                used_bigmaacs+=(size-n->size);
                 //update the next node
                 n->next->size-=(size-n->size);
                 n->next->ptr=((char*)n->next->ptr)+(size-n->size);
@@ -819,12 +823,16 @@ void *realloc(void * ptr, size_t size)
                 n->size+=(size-n->size);
                 //fix the free nodes place in the heap
                 heapify_down(n->heap,n->next->heap_idx);
-                verify_memory(head,1);
             }
+            used_bigmaacs+=size-n->size;
+	    requested_bigmaacs+=size-n->size;
+            verify_memory(head,1);
         }
 
+	//we are shinking in this case
         if (n->size>=size) {
             fprintf(stderr,"Realloc handle #1\n");
+	    requested_bigmaacs-=n->size-size;
             int ret = resize_node(n,size);
             if (ret!=0) {
                 fprintf(stderr,"BigMaac: Failed to resize mmap\n");
